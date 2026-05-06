@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter (excluded from repo)
+.ipynb_checkpoints/
+*.ipynb
+
+# ML artifacts
+results/
+data/
+wandb/
+*.ckpt
+*.pth
+*.pt
+*.pkl
+*.npz
+*.npy
+
+# Configs with secrets
+.env
+*.local.yaml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Hydra outputs
+outputs/
+multirun/

@@ -1,0 +1,17 @@
+# @package _global_
+
+seed: 42
+device: cuda
+
+algorithm:
+  # algorithm hyperparameters go here
+
+training:
+  steps: 10000
+  lr: 1e-3
+
+logging:
+  wandb: true
+  project: adjoint-matching
+  entity: null  # set your wandb entity
+  log_every: 100
