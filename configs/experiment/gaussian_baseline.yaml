@@ -1,0 +1,41 @@
+# @package _global_
+
+seed: 42
+device: cpu
+
+target:
+  d: 4          # state dimension
+  m: 0.0        # mean (scalar, broadcast to d-vector of zeros)
+  c: 0.5        # target isotropic variance  (≠ 1 so control is non-trivial)
+
+sigma: 1.0      # constant noise schedule σ(t) = sigma
+
+sampler:
+  steps: 100    # Euler-Maruyama steps N
+
+algorithm:
+  n_outer: 256              # samples per outer loop iteration
+  n_inner: 256              # mini-batch size for inner L_RAM update
+  n_inner_steps: 10         # inner gradient steps per outer iteration
+  buffer_size: 10000
+
+network:
+  hidden_dim: 128
+  n_layers: 3
+  t_emb_dim: 32
+
+training:
+  outer_iterations: 500
+  lr: 3e-4
+
+eval:
+  every: 50           # evaluate every N outer iterations
+  n_control_mse: 512  # samples for control-MSE metric
+  n_mse_t_points: 20  # number of t values averaged in control-MSE
+  n_rollout: 512      # samples for L_SOC and W2 estimate
+
+logging:
+  wandb: false
+  project: adjoint-matching
+  entity: null
+  log_every: 10

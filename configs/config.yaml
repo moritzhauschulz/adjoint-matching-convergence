@@ -1,5 +1,5 @@
 defaults:
-  - experiment: default
+  - experiment: default   # override with experiment=gaussian_baseline etc.
   - _self_
 
 hydra:

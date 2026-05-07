@@ -46,3 +46,10 @@ Thumbs.db
 # Hydra outputs
 outputs/
 multirun/
+
+# Claude memory
+memory/
+
+# Stray generated artifacts at repo root
+/*.png
+/*.json
