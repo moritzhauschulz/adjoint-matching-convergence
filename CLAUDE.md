@@ -4,7 +4,7 @@
 Evaluate the convergence properties and capabilities of the adjoint matching algorithm (and its variants, like adjoint sampling) across a set of experimental benchmarks.
 
 ## Scientific Rigor
-This codebase should accurately represent any underlying mathematics. If in doubt about underlying mathematics, i.e. when you cannot reliably verify their correctness or their correspondence to the user's requests, ask for clarification. Mathematical accuracy is the single most important principle in this repository. All mathematics in CLAUDE.md files shoudl be redndered in Latex (or similar human readable form).
+This codebase should accurately represent any underlying mathematics. If in doubt about underlying mathematics, i.e. when you cannot reliably verify their correctness or their correspondence to the user's requests, ask for clarification. Mathematical accuracy is the single most important principle in this repository. All mathematics in CLAUDE.md files should be rendered in LaTeX (or similar human readable form).
 
 ## Maintenance
 Update this CLAUDE.md file regularly, especially after structural changes or new implementations. Always ask the user to approve changes, never change CLAUDE.md without approval.
@@ -12,14 +12,16 @@ Update this CLAUDE.md file regularly, especially after structural changes or new
 ## Repository layout
 
 ```
-src/adjoint_matching/   # installable package: algorithm, metrics, utils
-experiments/            # runnable experiment scripts (entry points)
-configs/                # Hydra config hierarchy
-  config.yaml           # root config (sets hydra output dirs → results/)
-  experiment/           # per-experiment overrides
-tests/                  # pytest unit tests
-results/                # gitignored — Hydra writes outputs here automatically
-data/                   # gitignored — datasets
+src/adjoint_sampling/         # installable package: sampler, losses, network, replay buffer, utils
+experiments/                  # runnable experiment scripts (one subdirectory per experiment)
+  gaussian_baseline/          # Gaussian target with analytic optimal control
+  right_to_left_convergence/  # Quadratic reward; verifies right-to-left contraction bound
+configs/                      # Hydra config hierarchy
+  config.yaml                 # root config (sets hydra output dirs → results/run/<timestamp>/)
+  experiment/                 # per-experiment overrides
+tests/                        # pytest unit tests
+results/                      # gitignored — Hydra writes outputs here automatically
+data/                         # gitignored — datasets
 ```
 
 ## Setup
@@ -31,22 +33,27 @@ pip install -e ".[dev]"
 
 ## Running experiments
 
-Single run with defaults:
 ```bash
-python experiments/run.py
+# Run a specific experiment
+python experiments/<name>/run.py experiment=<name>
+
+# Example
+python experiments/right_to_left_convergence/run.py experiment=right_to_left_convergence
+
+# Override config values on the CLI
+python experiments/right_to_left_convergence/run.py experiment=right_to_left_convergence eval.every=1 training.lr=1e-4
+
+# Hydra multirun sweep
+python experiments/right_to_left_convergence/run.py --multirun experiment=right_to_left_convergence training.lr=1e-3,1e-4,1e-5
 ```
 
-Override config values on the CLI:
-```bash
-python experiments/run.py training.lr=1e-4 algorithm.some_param=0.5
-```
+All outputs (logs, metrics, plots) land in `results/run/<timestamp>/`.
 
-Hydra multirun sweep:
-```bash
-python experiments/run.py --multirun training.lr=1e-3,1e-4,1e-5
+To re-generate plots from a completed run without retraining:
+```python
+from experiments.right_to_left_convergence.plotting import load_and_plot
+load_and_plot("results/run/<timestamp>/metrics.json")
 ```
-
-All outputs (logs, checkpoints, metrics) land in `results/<job>/<timestamp>/`.
 
 ## Running tests
 
@@ -56,9 +63,10 @@ pytest
 
 ## Key conventions
 - All experiments are reproducible via `seed` in config (propagated to random/numpy/torch).
-- W&B logging is opt-in via `logging.wandb=true` (default: true in `default.yaml`).
-- Algorithm implementation lives in `src/adjoint_matching/algorithm.py`; metrics in `metrics.py`.
+- W&B logging is opt-in via `logging.wandb=true`; entity must be set in the experiment config.
+- Each experiment has its own `CLAUDE.md` with the full mathematical spec.
 - No notebooks — analysis is done via experiment scripts and logged metrics.
+- Plots are saved as PNGs to the Hydra output directory alongside `metrics.json`.
 
 ## Before implementing any algorithm
 
@@ -81,8 +89,8 @@ When multiple algorithms are implemented, their module structure must stay paral
 
 ## Git/Github usage
 
-When starting on a new feature, always ask if a new feature branch should be openend. Never merge branches locally, unless requested by the user. Instead when a featrue is ready to be merged into `develop`, make a PR on github and tell the user to review it. All git actions should be approved by the user, including push/pull.
+When starting on a new feature, always ask if a new feature branch should be opened. Never merge branches locally, unless requested by the user. Instead when a feature is ready to be merged into `develop`, make a PR on GitHub and tell the user to review it. All git actions should be approved by the user, including push/pull.
 
 ## Compute
 
-Where possible, the code should automatically detect the available cimpute resources. Ideally there should always be the option for apple silicon, and for CUDA.
+Where possible, the code should automatically detect the available compute resources. Ideally there should always be the option for Apple Silicon and for CUDA.
