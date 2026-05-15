@@ -1,0 +1,57 @@
+# @package _global_
+
+seed: 42
+device: cpu
+
+target:
+  d: 1          # state dimension
+  w1: 0.5        # mixture weight for mode 1 (w2 = 1 - w1)
+  lambda1: 1.0  # precision of mode 1
+  mu1: -3.0     # centre of mode 1
+  lambda2: 1.0  # precision of mode 2
+  mu2: 3.0      # centre of mode 2
+
+sigma: 2.0       # constant noise schedule σ(t) = sigma
+
+sampler:
+  steps: 100     # Euler-Maruyama steps N
+
+algorithm:
+  n_outer: 256
+  n_inner: 256
+  n_inner_steps: 500
+  buffer_size: 4096
+  inner_tol: 0.01        # plateau window range threshold (0 to disable)
+  inner_patience: 20     # plateau window size for convergence check
+
+network:
+  hidden_dim: 128
+  n_layers: 3
+  t_emb_dim: 32
+
+training:
+  outer_iterations: 200
+  lr: 3e-4
+  lr_min: 0.0
+  inner_warmup_frac: 0.1
+
+eval:
+  every: 10
+  first_k: 10
+  n_time_slices: 100
+  n_metric_samples: 512
+  linf_x_range: 5.0
+  n_linf_grid: 500
+  n_sample_paths: 1000
+  inner_curve_every: 10
+  # Same-BM LHS evaluation
+  same_bm_eval: true        # enable/disable the same-BM metric
+  n_same_bm_samples: 64    # Monte Carlo BM draws per starting point
+  n_same_bm_grid: 60        # x grid points for same-BM eval
+  same_bm_every: 10         # compute every N outer iterations
+
+logging:
+  wandb: true
+  project: adjoint-matching
+  entity: moritz-hauschulz
+  log_every: 1

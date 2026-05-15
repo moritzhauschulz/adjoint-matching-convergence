@@ -4,9 +4,9 @@ seed: 42
 device: cpu
 
 target:
-  d: 1           # state dimension (1D for clarity in convergence plots)
+  d: 1          # state dimension (1D for clarity in convergence plots)
   lambda_: 1.0   # quadratic reward coefficient r(x) = λ/2‖x‖²
-  mu: 2.0        # reward centre: objective is -r(X₁ − μ) = −λ/2‖X₁ − μ‖²
+  mu: 2.5        # reward centre: objective is -r(X₁ − μ) = −λ/2‖X₁ − μ‖²
 
 sigma: 1.0       # constant noise schedule σ(t) = sigma
 
@@ -17,7 +17,7 @@ algorithm:
   n_outer: 256
   n_inner: 256
   n_inner_steps: 100
-  buffer_size: 10000
+  buffer_size: 100
 
 network:
   hidden_dim: 128
@@ -25,7 +25,7 @@ network:
   t_emb_dim: 32
 
 training:
-  outer_iterations: 25
+  outer_iterations: 50
   lr: 1e-4
 
 eval:
@@ -34,9 +34,10 @@ eval:
   n_metric_samples: 512  # samples per time slice for RelL₂ and AbsL₂
   linf_x_range: 5.0      # sup-norm grid covers x ∈ [−x_range, x_range]
   n_linf_grid: 500       # number of uniform grid points for AbsL∞ estimate
+  n_sample_paths: 1000    # sample trajectories overlaid on u* / u_theta heatmaps (0 to disable)
 
 logging:
   wandb: true
   project: adjoint-matching
   entity: moritz-hauschulz
-  log_every: 10
+  log_every: 1

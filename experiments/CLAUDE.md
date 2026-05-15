@@ -5,7 +5,9 @@
 | Experiment | Directory | Purpose |
 |---|---|---|
 | Gaussian baseline | `gaussian_baseline/run.py` | Sanity-check: Gaussian target with full adjoint sampling objective |
-| Right-to-left convergence | `right_to_left_convergence/` | Verify theoretical contraction bound using quadratic reward + analytic $u^*$ |
+| Right-to-left convergence (unimodal) | `right_to_left_convergence_unimodal/` | Verify theoretical contraction bound using quadratic reward + analytic $u^*$ |
+| Right-to-left convergence (bimodal) | `right_to_left_convergence_bimodal/` | Same contraction bound verification with log-mixture bimodal reward + Feynman-Kac $u^*$ |
+| Right-to-left convergence (bimodal, same BM) | `right_to_left_convergence_bimodal_same_bm/` | Directly estimates the LHS of the §2.1 bound via shared Brownian motion for $X^{u_\theta}$ and $X^{u^*}$ |
 
 ## Shared conventions
 

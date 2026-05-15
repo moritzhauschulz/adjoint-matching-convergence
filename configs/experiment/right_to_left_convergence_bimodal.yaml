@@ -1,0 +1,52 @@
+# @package _global_
+
+seed: 42
+device: cpu
+
+target:
+  d: 1          # state dimension
+  w1: 0.5        # mixture weight for mode 1 (w2 = 1 - w1)
+  lambda1: 1.0  # precision of mode 1
+  mu1: -3.0     # centre of mode 1
+  lambda2: 1.0  # precision of mode 2
+  mu2: 3.0      # centre of mode 2
+
+sigma: 2.0       # constant noise schedule σ(t) = sigma
+
+sampler:
+  steps: 100     # Euler-Maruyama steps N
+
+algorithm:
+  n_outer: 256
+  n_inner: 256
+  n_inner_steps: 500     # max gradient steps per outer iteration
+  buffer_size: 4096
+  inner_tol: 0.01        # plateau window range threshold (0 to disable)
+  inner_patience: 20     # plateau window size for convergence check
+
+network:
+  hidden_dim: 128
+  n_layers: 3
+  t_emb_dim: 32
+
+training:
+  outer_iterations: 200
+  lr: 3e-4
+  lr_min: 0.0            # cosine decay floor within each inner loop
+  inner_warmup_frac: 0.1 # fraction of n_inner_steps for linear warmup per outer iteration
+
+eval:
+  every: 10               # evaluate every N outer iterations (after first_k)
+  first_k: 10            # also evaluate every iteration for the first k iterations
+  n_time_slices: 100      # evaluate at t_k = k/K, k = 0…K
+  n_metric_samples: 512  # path samples per time slice for RelL₂ and AbsL₂
+  linf_x_range: 5.0      # sup-norm grid half-width around (μ1+μ2)/2
+  n_linf_grid: 500       # number of uniform grid points for AbsL∞ estimate
+  n_sample_paths: 1000   # sample trajectories overlaid on heatmaps (0 to disable)
+  inner_curve_every: 10  # record full inner loss curve every N outer iterations
+
+logging:
+  wandb: true
+  project: adjoint-matching
+  entity: moritz-hauschulz
+  log_every: 1

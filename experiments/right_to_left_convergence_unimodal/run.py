@@ -27,7 +27,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from adjoint_sampling import DriftMLP, Sampler, ReplayBuffer, ram_loss, utils
 from plotting import (plot_convergence, plot_heatmaps, plot_optimal_control,
-                      plot_contraction_heatmaps, save_snapshots)
+                      plot_contraction_heatmaps, plot_control_evolution,
+                      plot_terminal_distributions, plot_terminal_evolution,
+                      save_snapshots)
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +165,27 @@ def _error_field(
 
 
 @torch.no_grad()
+def control_field(
+    u_theta: nn.Module,
+    t_val: float,
+    lambda_: float,
+    mu: float,
+    sigma_fn,
+    d: int,
+    xs: Tensor,
+) -> list[float]:
+    """u_θ(t,x) for each x in xs. Returns scalar values for d=1, norms for d>1."""
+    n_grid = xs.shape[0]
+    x_t = torch.zeros(n_grid, d, device=xs.device)
+    x_t[:, 0] = xs
+    t = torch.full((n_grid,), t_val, device=xs.device)
+    u_hat = u_theta(x_t, t)
+    if d == 1:
+        return u_hat[:, 0].tolist()
+    return u_hat.norm(dim=-1).tolist()
+
+
+@torch.no_grad()
 def abs_linf(
     u_theta: nn.Module,
     t_val: float,
@@ -179,6 +202,35 @@ def abs_linf(
     """
     field = _error_field(u_theta, t_val, lambda_, mu, sigma_fn, d, xs)
     return field.max().item(), field.tolist()
+
+
+# ---------------------------------------------------------------------------
+# Sample path generation
+# ---------------------------------------------------------------------------
+
+@torch.no_grad()
+def euler_maruyama_paths(
+    control_fn,
+    n_paths: int,
+    ts: Tensor,
+    d: int,
+    sigma_fn,
+    device,
+) -> list[list[float]]:
+    """Sample n_paths trajectories from X_0=0 via Euler-Maruyama.
+
+    Returns list of shape [n_paths][K+1]: first-dimension x values at each time step.
+    """
+    x = torch.zeros(n_paths, d, device=device)
+    traj = [x[:, 0].tolist()]
+    for i in range(ts.shape[0] - 1):
+        t_vec = ts[i].expand(n_paths)
+        dt = (ts[i + 1] - ts[i]).item()
+        u = control_fn(x, t_vec)                                        # [n_paths, d]
+        sigma_t = sigma_fn(t_vec).unsqueeze(-1)                         # [n_paths, 1]
+        x = x + u * dt + sigma_t * math.sqrt(dt) * torch.randn_like(x)
+        traj.append(x[:, 0].tolist())
+    return [[traj[k][b] for k in range(len(traj))] for b in range(n_paths)]
 
 
 # ---------------------------------------------------------------------------
@@ -213,6 +265,8 @@ def main(cfg: DictConfig) -> None:
     K = cfg.eval.n_time_slices
     ts_eval = torch.linspace(0.0, 1.0, K + 1, device=device)
     Ms_eval, Vs_eval = riccati_mean_and_variance(ts_eval, lambda_, mu, sigma_fn)
+    m1: float = Ms_eval[-1].item()   # mean of X_1 under u*
+    v1: float = Vs_eval[-1].item()   # variance of X_1 under u*
 
     # Uniform x grid for sup-norm and heatmap (precomputed once), centred at μ
     xs_linf = torch.linspace(mu - cfg.eval.linf_x_range, mu + cfg.eval.linf_x_range,
@@ -326,6 +380,17 @@ def main(cfg: DictConfig) -> None:
                 if prev_tiled_al_inf_vals is not None and prev_tiled_al_inf_vals[k] > 1e-12:
                     wandb_metrics[f"tiled_contr_fact/t{k:03d}"] = tiled_contr_fact[k]
 
+            # Control field and sample paths for this checkpoint
+            snap_u_theta_field: list[list[float]] = [
+                control_field(net, ts_eval[k].item(), lambda_, mu, sigma_fn, d, xs_linf)
+                for k in range(K + 1)
+            ]
+            n_sp = cfg.eval.n_sample_paths
+            snap_paths_theta = (
+                euler_maruyama_paths(net, n_sp, ts_eval, d, sigma_fn, device)
+                if n_sp > 0 else None
+            )
+
             snapshots.append({
                 "outer_it": outer_it,
                 "rel_l2": rl2_vals,
@@ -336,6 +401,8 @@ def main(cfg: DictConfig) -> None:
                 "tiled_al_inf": tiled_al_inf_vals,
                 "tiled_contr_fact": tiled_contr_fact,
                 "tiled_error_fields": tiled_error_fields,  # [K+1, n_grid]
+                "u_theta_field": snap_u_theta_field,        # [K+1, n_grid]
+                "paths_theta": snap_paths_theta,            # [n_paths, K+1] or None
             })
             prev_al_inf_vals = al_inf_vals
             prev_tiled_al_inf_vals = tiled_al_inf_vals
@@ -353,10 +420,40 @@ def main(cfg: DictConfig) -> None:
 
     print("Training complete.")
     output_dir = Path(HydraConfig.get().runtime.output_dir)
+
+    # Compute final learned control field on the same (t, x) grid as u_star_field
+    with torch.no_grad():
+        u_theta_field: list[list[float]] = []
+        for k in range(K + 1):
+            t_val_k = ts_eval[k].item()
+            u_theta_field.append(control_field(net, t_val_k, lambda_, mu, sigma_fn, d, xs_linf))
+
+    # Generate sample trajectories under u* and u_theta
+    n_sp = cfg.eval.n_sample_paths
+    if n_sp > 0:
+        u_star_fn = lambda x, t: optimal_control(x, t, lambda_, mu, sigma_fn)
+        paths_star = euler_maruyama_paths(u_star_fn, n_sp, ts_eval, d, sigma_fn, device)
+        paths_theta = euler_maruyama_paths(net, n_sp, ts_eval, d, sigma_fn, device)
+    else:
+        paths_star = paths_theta = None
+
+    target_pdf_fn = lambda x: (
+        np.exp(-0.5 * (np.asarray(x) - m1) ** 2 / v1)
+        / math.sqrt(2 * math.pi * v1)
+    )
+
     save_snapshots({"snapshots": snapshots, "ts": ts_list, "xs": xs_list,
-                    "u_star_field": u_star_field, "d": d}, output_dir)
+                    "u_star_field": u_star_field, "u_theta_field": u_theta_field,
+                    "paths_star": paths_star, "paths_theta": paths_theta,
+                    "m1": m1, "v1": v1, "d": d},
+                   output_dir)
     plot_convergence(snapshots, ts_list, output_dir)
-    plot_optimal_control(ts_list, xs_list, u_star_field, d, output_dir)
+    plot_optimal_control(ts_list, xs_list, u_star_field, d, output_dir,
+                         u_theta_field, paths_star, paths_theta)
+    plot_control_evolution(snapshots, ts_list, xs_list, d, u_star_field, output_dir)
+    if paths_star is not None and paths_theta is not None:
+        plot_terminal_distributions(paths_star, paths_theta, target_pdf_fn, d, output_dir)
+    plot_terminal_evolution(snapshots, target_pdf_fn, d, output_dir)
     plot_heatmaps(snapshots, ts_list, xs_list, output_dir)
     plot_contraction_heatmaps(snapshots, ts_list, xs_list, output_dir)
 
