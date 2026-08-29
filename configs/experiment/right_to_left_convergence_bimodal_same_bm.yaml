@@ -39,30 +39,23 @@ training:
   inner_warmup_frac: 0.1
 
 eval:
-  every: 10
-  first_k: 10
-  n_time_slices: 100
-  n_metric_samples: 512
-  linf_x_range: 5.0
-  n_linf_grid: 500
-  n_sample_paths: 1000
-  inner_curve_every: 10
-  # Operator T evaluation — also hosts the §"Sanity Check" metrics
-  # (‖P(u_θ) − u*‖ with analytic u*, its tiled/ratio forms, and a both-rollout compare)
-  op_eval: true             # enable/disable operator T computation
-  n_op_mc_samples: 64       # MC draws for estimating P(u)(t,x)
-  n_op_grid: 60             # x-grid points for the operator / sanity-check grid
-  op_every: 1               # compute every N outer iterations
-  sanity_ratio_only: false  # minimal output: only same_bm/sbm_ratio.png (the 2 §Sanity-Check ratios); skip all else
-  tiled_sup_percentile: 100.0  # robust "sup" for every tiled/sup-norm: p-th percentile over x AND over the [t,T] suffix (100 = exact max)
-  both_rollout_compare: true      # also MC-estimate the both-rollout shared-BM LHS
-  n_both_rollout_samples: 64      # shared-BM draws for that comparison (default: n_op_mc_samples)
-  # Path-based u^{n+1} vs T(u_n) metric (§3.1): evaluated along sampled trajectories
-  n_path_op_samples: 64    # paths under u^{n+1} for the path-based residual
-  # Fixed-point sanity check: ‖P(u*)(t,x) − u*(t,x)‖ ≪ 1  (analytic u* self-consistency)
-  fixed_point_check: true
-  n_fixed_point_mc: 512    # MC rollouts per (t, x) node
-  n_fixed_point_grid: 121  # x-grid resolution for the residual heatmap
+  every: 10                # eval cadence after the first `first_k` iterations
+  first_k: 10              # eval every iteration for the first k
+  n_time_slices: 100       # K: time grid t_k = k/K for every field / metric
+  n_metric_samples: 512    # u*-sampled states for the RelL2 log line
+  n_sample_paths: 1000     # trajectories for terminal_distributions + heatmap overlays (0 = off)
+  eval_x_range: 5.0        # x-grid half-width (centred at (mu1+mu2)/2) for every grid below
+  n_ctrl_grid: 500         # x resolution of the u* / u_theta control heatmap
+  op_eval: true            # compute the self-consistency operator P(u) + the §"Sanity Check" metrics
+  n_op_mc_samples: 64      # MC draws per (t,x) for P(u)(t,x)
+  n_op_grid: 60            # x resolution of the operator / sanity-check grid
+  op_every: 1              # compute P(u) every N outer iterations
+  n_path_op_samples: 64    # paths under u^{n+1} for the path-based residuals (§5.2/§5.3)
+  sanity_ratio_only: false # skip everything except same_bm/{sbm_ratio,sbm_ratio_learned,u_star_fixed_point_residual}.png
+  tiled_sup_percentile: 100.0  # robust "sup": p-th percentile over x AND the [t,T] suffix (100 = exact max)
+  fixed_point_check: true  # ‖P(u*)(t,x) − u*(t,x)‖ ≪ 1  (analytic u* self-consistency)
+  n_fixed_point_mc: 512    # MC rollouts per (t,x) node
+  n_fixed_point_grid: 121  # x resolution of the residual heatmap
 
 logging:
   wandb: true

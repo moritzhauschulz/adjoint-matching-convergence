@@ -83,16 +83,6 @@ computed once per operator-eval, on `xs_op`, at the `op_every` cadence.
 **Boundary condition:** $P(u)(T,x) = -\sigma(T)\nabla g(x) = u^*(T,x)$ for *all* $u$,
 so `op_sup_error[K] = 0` and `tiled_op_sup_error[K] = 0` exactly.
 
-### Both-rollout comparison (kept, secondary)
-
-`operator_diff_shared_bm_field` still MC-estimates the pure both-rollout form
-$\lVert\mathbb{E}_B[\sigma(\nabla g(X_T^{u_\theta}) - \nabla g(X_T^{u^*}))]\rVert$ with a
-**shared** Brownian path (`n_both_rollout_samples`). By linearity it has the same
-population value as $\mathrm{Sanity}$; the shared BM only lowers MC variance when
-$u_\theta\approx u^*$. Stored as `bothroll_lhs_fields` / `tiled_bothroll_lhs`;
-overlaid (dotted) on `tiled_same_bm_lhs.png` for reference. Disable with
-`eval.both_rollout_compare=false`.
-
 ---
 
 ## 4. Ratios and the $\sqrt{T-t}$ shape (§ "Sanity Check")
@@ -153,23 +143,23 @@ $\mathrm{mean}_x$ vs $t$).
 
 ### 5.1 Grid-based metrics (on `xs_op` grid)
 
-All metrics below are evaluated on the `xs_op` grid (same as `xs_sbm`, 60 points centred at $(\mu_1+\mu_2)/2$):
+All evaluated on the `xs_op` grid (`n_op_grid` points centred at $(\mu_1+\mu_2)/2$),
+via one batched EM pass over every $t_k$ (`operator_field_all_times`) plus one
+batched `optimal_control` / `net` grid call:
 
 | Metric | Description | Stored key |
 |--------|-------------|-----------|
-| $T(u_\theta^n)(t,x)$ signed | Signed 1-D operator output | `T_u_fields` `[K+1][n_op]` |
+| $P(u_\theta^n)(t,x)$ signed | Signed 1-D operator output | `T_u_fields` `[K+1][n_op]` |
 | $u_\theta^n(t,x)$ signed | Signed 1-D network output | `u_theta_op_fields` `[K+1][n_op]` |
-| $\|T(u_\theta^n) - u^*\|$ | Pointwise operator error | `op_error_fields` `[K+1][n_op]` |
-| $\sup_x\|T(u_\theta^n) - u^*\|$ | Sup operator error at each $t$ | `op_sup_error` `[K+1]` |
-| $\|T(u_\theta^n) - u^*\|_{[t,T]}$ | Tiled (suffix-max) operator error | `tiled_op_sup_error` `[K+1]` |
-| $\|u_\theta^n - u^*\|$ | Pointwise control error on `xs_op` | `u_error_op_fields` `[K+1][n_op]` |
-| $\sup_x\|u_\theta^n - u^*\|$ | Sup control error on `xs_op` | `u_sup_error_op` `[K+1]` |
-| $\|u_\theta^n - T(u_\theta^{n-1})\|$ | T-implementation residual on `xs_op` | `u_vs_Tu_fields` `[K+1][n_op]` |
-| $\sup_x\|u_\theta^n - T(u_\theta^{n-1})\|$ | Sup T-impl residual at each $t$ | `u_vs_Tu_sup` `[K+1]` |
-| $\|u_\theta^{n+1} - T(u_\theta^n)\|_{[t,T]}$ | Tiled T-impl residual | computed in plot from `u_vs_Tu_sup` |
-| $u^*(t,x)$ signed on `xs_op` | Analytic control on operator grid | `u_star_op_fields` `[K+1][n_op]` |
+| $u^*(t,x)$ signed | Analytic control on the operator grid | `u_star_op_fields` `[K+1][n_op]` |
+| $\|P(u_\theta^n) - u^*\|$ | Pointwise operator error | `op_error_fields` `[K+1][n_op]` |
+| $\sup_x\|P(u_\theta^n) - u^*\|$ | Sup operator error at each $t$ | `op_sup_error` `[K+1]` |
+| $\|P(u_\theta^n) - u^*\|_{[t,T]}$ | Tiled (suffix-sup) operator error | `tiled_op_sup_error` `[K+1]` |
+| $\|u_\theta^n - u^*\|$ | Pointwise control error | `u_error_op_fields` `[K+1][n_op]` |
+| $\sup_x\|u_\theta^n - u^*\|$ | Sup control error at each $t$ | `u_sup_error_op` `[K+1]` |
+| ratio $\|P(u_\theta^n)-u^*\| / \|u_\theta^n-u^*\|_{[t,T]}$ | §"Sanity Check" ratio (pointwise / tiled) | `sanity_ratio_pointwise` `[K+1][n_op]`, `sanity_ratio_tiled` `[K+1]` |
 
-### 5.2 Path-based u^{n+1} vs T(u_n) metric (§3.1)
+### 5.2 Path-based u^{n+1} vs P(u_n) metric (§3.1)
 
 The key insight is that the grid-based residual $\|u_\theta^{n+1} - T(u_\theta^n)\|$ may be large in regions that $u_\theta^{n+1}$ never visits during training. The path-based metric evaluates the residual **where $u_\theta^{n+1}$ is actually used**:
 
@@ -193,11 +183,9 @@ $$\mathrm{PathUstar}(t) = \mathbb{E}_{X^{u_\theta^{n+1}}_t}\!\left[\left\|u_\the
 
 The associated ratios divide by $\mathbb{E}_{t,u^{n+1}_\theta}[\|u^n_\theta - u^*\|]_{[t,T]}$ — **no** $\|\sigma\|$ factor (latest notes, eq:ratio-pw-over-tiled / eq:ratio-tiled-over-tiled) — where the denominator is also a path-based MC estimate under the **same** current control $u^{n+1}_\theta$:
 
-$$\text{per-}t\text{ ratio} = \frac{\mathrm{PathUstar}^{n+1}(t)}{\sup_{s\in[t,T]}\mathrm{PathUstar}_\mathrm{prev}^{n+1}(s)}, \qquad \text{tiled ratio} = \frac{\sup_{s\in[t,T]}\mathrm{PathUstar}^{n+1}(s)}{\sup_{s\in[t,T]}\mathrm{PathUstar}_\mathrm{prev}^{n+1}(s)}$$
+$$\text{per-}t\text{ ratio} = \frac{\mathrm{PathUstar}^{n+1}(t)}{\sup_{s\in[t,T]}\mathrm{PathUstar}_\mathrm{prev}^{n+1}(s)} \;\to\; 0 \quad\text{as } t\to T$$
 
-where $\mathrm{PathUstar}_\mathrm{prev}^{n+1}(t) = \mathbb{E}_{X^{u^{n+1}_\theta}_t}[\|u^n_\theta(t,X) - u^*(t,X)\|]$ is the path-based MC estimate of the **previous** iteration's error at the **current** control's states.
-
-Both ratios should $\to 0$ as $t \to T$ if the contraction bound holds.
+where $\mathrm{PathUstar}_\mathrm{prev}^{n+1}(t) = \mathbb{E}_{X^{u^{n+1}_\theta}_t}[\|u^n_\theta(t,X) - u^*(t,X)\|]$ is the path-based MC estimate of the **previous** iteration's error at the **current** control's states. (The tiled-over-tiled analogue in eq:ratio-tiled-over-tiled is computed the same way but its plot is not among the notes figures.)
 
 | Metric | Description | Stored key |
 |--------|-------------|-----------|
@@ -206,8 +194,7 @@ Both ratios should $\to 0$ as $t \to T$ if the contraction bound holds.
 
 **Implementation notes:**
 - `theta_traj` (shared with §5.2) is simulated once per eval; `path_u_vs_ustar` is always available
-- `path_u_prev_vs_ustar` requires `prev_net_for_op` (available from second eval checkpoint onward); evaluates `prev_net_for_op` and `u_star_fn` at the same `theta_traj` states
-- Both ratio plots use quantities from a **single** snapshot (not consecutive pairs)
+- `path_u_prev_vs_ustar` requires `prev_net_for_op` (available from the second op-eval onward); evaluates `prev_net_for_op` and `u_star_fn` at the same `theta_traj` states
 
 ---
 
@@ -223,120 +210,113 @@ Both ratios should $\to 0$ as $t \to T$ if the contraction bound holds.
 Both share the outer/inner cadence, frozen-$\bar u$ semantics, iteration indexing,
 and eval path. `am` costs ~`sampler.steps`× the per-inner-step network evals.
 
-### Core functions
+### Core functions (`run.py`)
 
-- `operator_diff_shared_bm_field(u_fn, v_fn, xs, ...)` — both-rollout shared-BM MC
-  estimate `‖E_B[σ(∇g(X_T^u) − ∇g(X_T^v))]‖` (secondary comparison only, §3)
-- `operator_field(u_fn, xs, t_start, ts, ...)` — T(u)(t,x) on a 1-D grid at one t → `[n_grid, d]`
-- `operator_field_all_times(u_fn, xs, ts, ...)` — T(u)(t_k,x) for **all** t_k in one batched EM
-  pass → `[K+1, n_grid, d]`; wraps `adjoint_sampling.operator.operator_grid_field_all_times`.
-  The op-eval block uses this (plus one batched `optimal_control` / `net` grid call) instead of
-  a per-slice loop — ~1.5× on the fast-iteration config.
-- `operator_field_at_points(u_fn, x_states, t_start, ts, ...)` — T(u)(t,x) at arbitrary `[n_pts, d]` states (path-based metric)
-- `adjoint_sampling.operator.fixed_point_residual_field(u_star_fn, grad_g_fn, xs, ts, ...)` — `‖T(u*)−u*‖` mesh (§5.0); shared across experiments
-- `simulate_paths(control_fn, n_paths, ts, d, sigma_fn, device)` — EM rollout → `[K+1, n_paths, d]`
+- `optimal_control(x, t, w1, λ1, μ1, w2, λ2, μ2, sigma_fn, sigma_int_fn, ν1, d)`
+  — analytic $u^*$ via the Doob $h$-transform (see §4 of the bimodal CLAUDE.md; carries $\kappa_i$)
+- `grad_r`, `terminal_mixture_params`, `_grad_g_bimodal` ($\nabla g = -x/\nu_1 - \nabla r$)
+- `operator_field_all_times(u_fn, xs, ts, ...)` — $P(u)(t_k,x)$ for **all** $t_k$ in one
+  batched EM pass → `[K+1, n_grid, d]`; wraps `adjoint_sampling.operator.operator_grid_field_all_times`
+- `operator_field_at_points(u_fn, x_states, t_start, ts, ...)` — $P(u)(t,x)$ at arbitrary
+  `[n_pts, d]` states (path-based metric)
+- `adjoint_sampling.operator.fixed_point_residual_field(u_star_fn, grad_g_fn, xs, ts, ...)`
+  — $\|P(u^*)-u^*\|$ mesh (§5.0); shared across experiments
+- `simulate_paths` / `euler_maruyama_paths` — EM rollout of a control
+- `rel_l2` — the RelL2 stdout log line (not stored per-field)
 
 ### Config keys under `eval`
 
 | Key | Purpose |
 |-----|---------|
-| `op_eval` | Enable/disable operator T eval — also hosts the sanity-check metrics (§3–§5.1) |
-| `n_op_mc_samples` | MC draws for P(u)(t,x) estimation |
-| `n_op_grid` | x-grid points for the operator / sanity-check grid (was `n_same_bm_grid`) |
-| `op_every` | Frequency for operator evaluation |
-| `sanity_ratio_only` | Minimal output: only the §"Sanity Check" plots — `same_bm/{sbm_ratio, sbm_ratio_learned, sanity_ratio_heatmap, u_star_fixed_point_residual}.png` (the last only if `fixed_point_check`); every other plot skipped |
-| `tiled_sup_percentile` | Robust "sup" for **every** tiled / sup-norm: the p-th percentile instead of the exact max, applied over $x$ (grid) **and** over the $[t,T]$ suffix. `100` = exact max (default). Lower (e.g. 95) suppresses single-node / single-slice outliers. Stored in `metrics.json`; the plots (via `set_suffix_percentile`) use the same value. |
-| `both_rollout_compare` | Also MC-estimate the both-rollout shared-BM LHS for comparison (§3) |
-| `n_both_rollout_samples` | Shared-BM draws for that comparison (default: `n_op_mc_samples`) |
-| `n_sample_paths` | Paths for terminal distribution plots |
-| `n_path_op_samples` | Paths under $u^{n+1}_\theta$ for path-based residuals (§5.2 and §5.3); kept small (default 64) for cost |
-| `fixed_point_check` | Enable/disable the analytic-$u^*$ fixed-point sanity check (§5.0) |
-| `n_fixed_point_mc` | MC rollouts per $(t,x)$ node (default 512; residual $\propto n_\text{mc}^{-1/2}$) |
-| `n_fixed_point_grid` | $x$-grid resolution for the residual heatmap (default 121) |
+| `every` / `first_k` | eval cadence: every iteration for the first `first_k`, then every `every` |
+| `n_time_slices` | $K$: time grid $t_k = k/K$ for every stored field |
+| `n_metric_samples` | $u^*$-sampled states for the RelL2 log line |
+| `n_sample_paths` | trajectories for `terminal_distributions` + the heatmap overlays (`0` = off) |
+| `eval_x_range` | x-grid half-width (centred at $(\mu_1+\mu_2)/2$) shared by every grid below |
+| `n_ctrl_grid` | x resolution of the $u^*$ / $u_\theta$ control heatmap |
+| `op_eval` | compute $P(u)$ + the §"Sanity Check" metrics |
+| `n_op_mc_samples` | MC draws per $(t,x)$ for $P(u)(t,x)$ |
+| `n_op_grid` | x resolution of the operator / sanity-check grid |
+| `op_every` | compute $P(u)$ every N outer iterations |
+| `n_path_op_samples` | paths under $u^{n+1}_\theta$ for the path-based residuals (§5.2/§5.3) |
+| `sanity_ratio_only` | write only `same_bm/{sbm_ratio, sbm_ratio_learned, u_star_fixed_point_residual}.png` |
+| `tiled_sup_percentile` | robust "sup": p-th percentile over $x$ **and** the $[t,T]$ suffix instead of the exact max (`100` = max). Stored in `metrics.json`; plots use the same value via `set_suffix_percentile`. |
+| `fixed_point_check` / `n_fixed_point_mc` / `n_fixed_point_grid` | the §5.0 analytic-$u^*$ fixed-point check |
 
 ### Data stored per eval snapshot
 
-- Sanity-check core: `op_error_fields`, `op_sup_error`, `tiled_op_sup_error` (§5.1 table)
-- `sanity_ratio_pointwise`: `[K+1][n_op]` — `op_error_fields / ‖u_θ−u*‖_{[t,T]}` (no ‖σ‖ factor)
-- `sanity_ratio_tiled`: `[K+1]` — `tiled_op_sup_error / ‖u_θ−u*‖_{[t,T]}` (no ‖σ‖ factor)
-- `bothroll_lhs_fields`: `[K+1][n_op]` — both-rollout shared-BM LHS (comparison); `None` if disabled
-- `tiled_bothroll_lhs`: `[K+1]` — suffix-max of the above
-- Grid-based operator metrics: see §5.1 table
-- `path_u_vs_Tu`: `[K+1]` — path-based T-implementation residual (§5.2); `None` on first eval
-- `path_u_vs_ustar`: `[K+1]` — path-based control error vs $u^*$ (§5.3); available from first eval
-- `path_u_prev_vs_ustar`: `[K+1]` — path-based error of $u^n_\theta$ vs $u^*$ at current states (§5.3); `None` on first eval
+`outer_it`, `rel_l2`; the §5.1 fields (`T_u_fields`, `u_theta_op_fields`,
+`u_star_op_fields`, `op_error_fields`, `op_sup_error`, `tiled_op_sup_error`,
+`u_error_op_fields`, `u_sup_error_op`, `sanity_ratio_pointwise`,
+`sanity_ratio_tiled`); the path-based metrics (`path_u_vs_Tu`, `path_u_vs_ustar`,
+`path_u_prev_vs_ustar` — `None` on the first op-eval, which has no previous
+network); and `paths_theta` (`n_sample_paths` trajectories under $u_\theta^{n}$,
+for the heatmap overlays). Op-eval fields are `None` on iterations where
+`snap_it % op_every != 0`.
 
-**Top-level of `metrics.json`** (not per-snapshot): `fixed_point_check =
-{xs [n_grid], residual [K+1][n_grid], p_u_star [K+1][n_grid], u_star [K+1][n_grid], n_mc}`
-— the §5.0 analytic-$u^*$ fixed-point residual, computed once.
+**Top-level of `metrics.json`**: `snapshots`, `ts`, `xs` (control grid), `xs_op`,
+`d`, `u_star_field`, `u_theta_field` (final), `paths_star` / `paths_theta`
+(final), `target_params`, `sigma` / `sigma_schedule` / `sigma_floor`,
+`objective`, `tiled_sup_percentile`, and `fixed_point_check =
+{xs, residual [K+1][n_grid], p_u_star, u_star, n_mc}` (§5.0, computed once).
 
-### Plot outputs (in `convergence/` subfolder — §3.1 "Assessing Convergence for the Learned Operator")
+### Plot outputs — only the 9 figures referenced in `Project_Notes.tm`
 
-| File | Content |
-|------|---------|
-| `learned_error_heatmap.png` | Pointwise $\|u_\theta^{n+1}(t,x)-u^*\|$ over $(t,x)$ on xs_op; one panel per eval |
-| `learned_tiled_sup_error.png` | $\|u_\theta^{n+1}-u^*\|_{[t,T]} = \sup_{s\in[t,T],x}\|u_\theta^{n+1}(s,x)-u^*(s,x)\|$; one curve per eval |
-| `learned_pointwise_over_tiled.png` | Ratio $\|(u_\theta^{n+1}-u^*)(x,t)\| / \|u_\theta^n-u^*\|_{[t,T]}$ over $(t,x)$; one panel per consecutive pair. Colour: `RdBu_r`, **linear** scale $[0, 2]$ (white $= 1$, the contraction threshold; blue $<1<$ red), evenly-spaced colourbar ticks; `vmax` grows past 2 (with `extend="max"`) only if the 98th-pctile ratio exceeds it |
-| `learned_pointwise_over_tiled_traj.png` | Same as above with a subsample (~40) of trajectories under the **source** control $u_\theta^n$ (snapshot $n$'s `paths_theta`) overlaid on each panel (thin translucent black). `overlay_traj=True`; needs `eval.n_sample_paths > 0` |
-| `learned_tiled_over_tiled.png` | Ratio $\|u_\theta^{n+1}-u^*\|_{[t,T]} / \|u_\theta^n-u^*\|_{[t,T]}$ vs $t$; → 0 as $t\to T$ if bound holds |
-| `path_u_vs_ustar.png` | $\mathbb{E}_{X^{u^{n+1}}_t}[\|u_\theta^{n+1}-u^*\|]$ — path-based control error vs $u^*$; one curve per eval |
-| `path_u_vs_ustar_per_t_over_tiled.png` | Per-$t$ ratio $\mathrm{PathUstar}^{n+1}(t) / \sup_{s\in[t,T]}\mathrm{PathUstar}^{n+1}_\mathrm{prev}(s)$; one curve per snapshot with `path_u_prev_vs_ustar` |
-| `path_u_vs_ustar_tiled_over_tiled.png` | Tiled ratio $\sup_s\mathrm{PathUstar}^{n+1}(s) / \sup_s\mathrm{PathUstar}^{n+1}_\mathrm{prev}(s)$; one curve per snapshot with `path_u_prev_vs_ustar` |
+`plotting.py` produces exactly these; `load_and_plot(metrics_json, output_dir,
+tiled_sup_percentile)` regenerates them (optionally re-clamping every sup at a
+percentile).
 
-**Notes on the ratios:**
-- Denominator: $\|u_\theta^n-u^*\|_{[t,T]}$ — **no** $\|\sigma\|$ factor (latest notes; matches `sbm_ratio` / `sbm_ratio_learned`).
-- Grid-based ratios use xs_op grid (suffix-max of `u_sup_error_op` for tiled quantities).
-- Path-based ratios use `path_u_vs_ustar` (suffix-max for tiled); denominator reuses `u_sup_error_op` suffix-max.
-- Consecutive pairs: iter $n$ supplies the denominator, iter $n+1$ the numerator.
+| File | Function | Content |
+|------|----------|---------|
+| `control/heatmap_u_star.png` | `plot_optimal_control` | $(t,x)$ heatmap of $u^*$ and the final $u_\theta$ |
+| `control/heatmap_P_vs_next_control_traj.png` | `plot_operator_vs_next_control` | per consecutive op-eval pair $(n, n{+}1)$: 4 $(t,x)$ heatmaps — $P(u_\theta^n)$, $u_\theta^{n+1}$, $P(u_\theta^n)-u_\theta^{n+1}$, $u_\theta^{n+1}-u^*$ — one shared robust symmetric colour scale, source-control ($u_\theta^n$) trajectories overlaid |
+| `terminal/terminal_distributions.png` | `plot_terminal_distributions` | terminal histograms of $X_1$ under $u^*$ and $u_\theta$ vs the analytic $p^{u^*}$ |
+| `same_bm/u_star_fixed_point_residual.png` | `plot_fixed_point_residual` | §5.0. heatmap $\|P(u^*)(t,x)-u^*\|$ + $\sup_x$/$\mathrm{mean}_x$ vs $t$ ($\ll 1$, $=0$ at $t=T$) |
+| `same_bm/sbm_ratio.png` | `plot_sbm_ratio` | left $\mathrm{mean}_x$ of `sanity_ratio_pointwise`, right `sanity_ratio_tiled`; both $\to 0$ as $t\to T$ |
+| `same_bm/sbm_ratio_learned.png` | `plot_sbm_ratio_learned` | same layout with $u_\theta^{n+1}$ in the numerator instead of $P(u_n)$: $\|u_\theta^{n+1}-u^*\| / \|u_\theta^n-u^*\|_{[t,T]}$ per consecutive pair (denominator from `u_sup_error_op` of iter $n$); grey dotted $=1$ |
+| `operator/path_u_vs_Tu.png` | `plot_path_u_vs_Tu` | $\mathbb{E}_{X^{u^{n+1}}_t}[\|u_\theta^{n+1}-P(u_\theta^n)\|(t,\cdot)]$ — path-based residual, one curve per iteration |
+| `convergence/learned_pointwise_over_tiled_traj.png` | `plot_learned_pointwise_over_tiled` | §5.3 eq:ratio-pw-over-tiled: $\|(u_\theta^{n+1}-u^*)(x,t)\| / \|u_\theta^n-u^*\|_{[t,T]}$ over $(t,x)$ per consecutive pair. `RdBu_r` linear $[0,2]$ (white $=1$, blue $<1<$ red); source-control trajectories overlaid |
+| `convergence/path_u_vs_ustar_per_t_over_tiled.png` | `plot_path_u_vs_ustar_per_t_over_tiled` | path-based analogue: $\mathrm{PathUstar}^{n+1}(t) / \sup_{s\in[t,T]}\mathrm{PathUstar}^{n+1}_\mathrm{prev}(s)$ |
 
-### Plot outputs (in `same_bm/` subfolder — § "Sanity Check")
+### Grids
 
-| File | Content |
-|------|---------|
-All sourced from `op_error_fields` (`‖P(u_θ^n) − u*‖`, analytic $u^*$) unless noted.
-
-| `same_bm_lhs_curves.png` | $\mathrm{mean}_x\,\|P(u_\theta^n)(t,x)-u^*(t,x)\|$ vs $t$; one curve per op-eval |
-| `same_bm_lhs_heatmaps.png` | $\|P(u_\theta^n)(t,x)-u^*(t,x)\|$ over $(t,x)$; one panel per op-eval |
-| `tiled_same_bm_lhs.png` | 2 panels. **Left** (linear y): `tiled_op_sup_error` (solid), `tiled_bothroll_lhs` (dotted, both-rollout comparison), grey dashed $= c\,\|u_\theta-u^*\|_{[t,T]}\sqrt{T-t}$ (LS-fit). **Right**: log–log vs $\tau=T-t$ — tiled $\sup_{s\ge t,x}$ (solid), pointwise $\sup_x$ = `op_sup_error` (dashed), slope-$\tfrac12$ guide |
-| `sbm_ratio.png` | Left: $\mathrm{mean}_x$ of `sanity_ratio_pointwise`; right: `sanity_ratio_tiled`. Both $\to 0$ as $t\to T$ |
-| `sbm_ratio_learned.png` | **Exact analogue of `sbm_ratio` with the learned control in the numerator instead of $P(u_n)$.** Per consecutive op-eval pair $n\to n{+}1$: $\|u_\theta^{n+1}(t,x)-u^*\|\,/\,\|u_\theta^n-u^*\|_{[t,T]}$ — a per-step contraction factor for the outer update, **no** $\|\sigma\|_{[t,T]}$ factor (same normalisation as `sbm_ratio`). Left: $\mathrm{mean}_x$ pointwise (`u_error_op_fields`); right: tiled $\|u_\theta^{n+1}-u^*\|_{[t,T]}/\|u_\theta^n-u^*\|_{[t,T]}$ (`u_sup_error_op` suffix-max, prev vs current). $<1 \Rightarrow$ the step contracts the error at that $t$; grey dotted $=1$ |
-| `u_star_fixed_point_residual.png` | §5.0. **Left:** heatmap $\|P(u^*)(t,x)-u^*(t,x)\|$ over the $(t,x)$ grid. **Right:** $\sup_x$ / $\mathrm{mean}_x$ vs $t$. $\ll 1$ everywhere, $=0$ at $t=T$; title shows max residual and $n_\text{mc}$ |
-
-### Plot outputs (in `control/` subfolder)
-
-| File | Content |
-|------|---------|
-| `heatmap_u_star.png` | $(t,x)$ heatmaps of $u^*$ and the final $u_\theta$ (no trajectory overlay) |
-| `heatmap_control_evolution.png` | $u_\theta(t,x)$ over training, one panel per eval (no trajectory overlay) |
-| `heatmap_P_vs_next_control.png` | Per consecutive op-eval pair $(n, n{+}1)$, a row of four $(t,x)$ heatmaps: **(1)** $P(u_\theta^n)$ (`T_u_fields[n]`), **(2)** $u_\theta^{n+1}$ (`u_theta_op_fields[n+1]`), **(3)** $P(u_\theta^n) - u_\theta^{n+1}$ (signed), **(4)** $u_\theta^{n+1} - u^*$ (signed, `u_star_op_fields`). **One** robust (99th-pctile) symmetric colour scale shared by *every* panel — controls and residuals alike — so relative error sizes are apparent; a colourbar on each row. All on `xs_op`. |
-| `heatmap_P_vs_next_control_traj.png` | Same figure as above, with a subsample (~40) of trajectories rolled out under the **source** control $u_\theta^n$ (snapshot $n$'s `paths_theta`) overlaid on every panel of that row (thin translucent black) — shows where the process the operator $P(u_\theta^n)$ samples actually visits. `overlay_traj=True`; d=1 only; needs `eval.n_sample_paths > 0`. |
-
-### Plot outputs (in `operator/` subfolder)
-
-| File | Content |
-|------|---------|
-| `operator_error_curves.png` | $\|T(u_\theta^n)-u^*\|_\infty$ (solid) vs $\|u_\theta^n-u^*\|_\infty$ (dashed); left=pointwise, right=tiled |
-| `operator_vs_learned.png` | Same quantities on xs_op, plus ratio $\|T-u^*\|/\|u-u^*\|$ |
-| `u_vs_Tu_prev.png` | $\|u_\theta^n-T(u_\theta^{n-1})\|$ (dashed) vs $\|u_\theta^n-u^*\|$ (solid) |
-| `u_vs_Tu_norm.png` | $\|u_\theta^{n+1}-T(u_\theta^n)\|_{[t,T]}$ only — tiled T-implementation residual |
-| `path_u_vs_Tu.png` | $\mathbb{E}_{X^{u^{n+1}}_t}[\|u_\theta^{n+1}-T(u_\theta^n)\|]$ — path-based residual |
-| `Tu_vs_u_next_heatmap.png` | Signed heatmap $T(u_\theta^n)(t,x) - u_\theta^{n+1}(t,x)$ |
-
-### Notes on grids
-
-- `xs_op`: centred at $(\mu_1+\mu_2)/2$, half-width `linf_x_range`, `n_op_grid` points —
-  used by the operator T eval and all sanity-check metrics (§3–§5.1)
-- `xs_linf`: same range, `n_linf_grid` points; used for older metrics (abs_l2, abs_linf, control heatmaps)
-- The §5.0 fixed-point check builds its own grid (`n_fixed_point_grid` points, same range)
-- The path-based metrics use states sampled from the actual controlled process — no fixed grid
+- `xs_op` — operator / sanity-check grid, `n_op_grid` points, half-width `eval_x_range`
+- `xs_ctrl` — `n_ctrl_grid` points, same range; `heatmap_u_star` only
+- `xs_fp` — `n_fixed_point_grid` points, same range; §5.0 only
+- path-based metrics use states from the actual controlled process — no fixed grid
 
 ### Boundary condition
 
-$T(u)(T,x) = u^*(T,x) = -\sigma(T)\nabla g(x)$ for **all** $u$ (Feynman-Kac at $t=T$). Hence `op_sup_error[K] = 0` exactly.
+$P(u)(T,x) = u^*(T,x) = -\sigma(T)\nabla g(x)$ for **all** $u$ (Feynman-Kac at $t=T$). Hence `op_sup_error[K] = 0` exactly.
 
 ---
 
 ## 7. Revision history
+
+### 2026-08-29 — plotting cut to the 9 notes figures; eval block trimmed
+
+`Project_Notes.tm` now links exactly 9 figures. `plotting.py` (2086 → ~750
+lines) keeps only their producers; `run.py` and `load_and_plot` call only those.
+Removed with them:
+
+- **plots:** every `*_convergence*`, `*heatmap*` (errors/), `inner_*`,
+  `control_evolution`, `terminal_evolution`, `same_bm_lhs_*`,
+  `tiled_same_bm_lhs`, `sanity_ratio_heatmap`, `operator_error_curves`,
+  `operator_vs_learned`, `u_vs_Tu_*`, `Tu_vs_u_next_heatmap`,
+  `learned_error_heatmap`, `learned_tiled_sup_error`, `learned_tiled_over_tiled`,
+  `path_u_vs_ustar` (curve), `path_u_vs_ustar_tiled_over_tiled`. The two `_traj`
+  variants are now the only form of their plot (no non-overlay version).
+- **eval metrics:** `abs_l2`, `abs_linf` / `_error_field` / `error_fields` /
+  `tiled_error_fields`, `contr_fact` / `tiled_contr_fact` / `abs_linf` /
+  `tiled_al_inf`, the both-rollout shared-BM estimator
+  (`operator_diff_shared_bm_field`, `bothroll_lhs_fields`, `tiled_bothroll_lhs`),
+  `u_vs_Tu_fields` / `u_vs_Tu_sup`, per-snapshot `u_theta_field`, `inner_steps` /
+  `inner_loss_curve`, `sigma_grid`. `rel_l2` kept for the stdout log line only.
+- **config:** `both_rollout_compare`, `n_both_rollout_samples`,
+  `inner_curve_every` removed; `linf_x_range` → `eval_x_range`, `n_linf_grid` →
+  `n_ctrl_grid`; the stale `n_same_bm_grid` fallback dropped.
+- **helpers:** the unused single-$t$ `operator_field` wrapper removed;
+  `grad_g_fn` deduped onto `_grad_g_bimodal`.
 
 ### 2026-08-29 — `algorithm.objective`: reference $L_\text{AM}$ option
 

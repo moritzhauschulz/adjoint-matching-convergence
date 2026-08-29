@@ -7,7 +7,7 @@
 | Gaussian baseline | `gaussian_baseline/run.py` | Sanity-check: Gaussian target with full adjoint sampling objective |
 | Right-to-left convergence (unimodal) | `right_to_left_convergence_unimodal/` | Verify theoretical contraction bound using quadratic reward + analytic $u^*$ |
 | Right-to-left convergence (bimodal) | `right_to_left_convergence_bimodal/` | Same contraction bound verification with log-mixture bimodal reward + Feynman-Kac $u^*$ |
-| Right-to-left convergence (bimodal, sanity check) | `right_to_left_convergence_bimodal_same_bm/` | Estimates the "Sanity Check" LHS $\|\mathbb{E}_B[\sigma(t)(\nabla g(X_T^{u_\theta}) - \nabla g(X_T^{u^*}))]\|$ (norm outside the expectation); shared BM is a variance-reduction device |
+| Right-to-left convergence (bimodal, sanity check) | `right_to_left_convergence_bimodal_same_bm/` | The "Sanity Check" of `Project_Notes.tm`: with $P(u)(t,x) = -\sigma(t)\mathbb{E}[\nabla g(X_T^{u,x})]$, checks $P(u^*) = u^*$, the operator error $\|P(u_\theta) - u^*\|$ (norm outside the MC mean), its ratios over $\|u_\theta - u^*\|_{[t,T]} \to 0$, and their path-based analogues. Trains via `ram` or `am` (`algorithm.objective`). |
 
 ## Shared conventions
 
