@@ -124,10 +124,11 @@ $$\tilde{a}(t_{n-1};\mathbf{X}) = \tilde{a}(t_n;\mathbf{X}) + \tilde{a}(t_n;\mat
 | File | Responsibility |
 |---|---|
 | `sampler.py` | Forward SDE rollout; stores trajectory $\{X_n\}$ and noise $\{\varepsilon_n\}$ |
-| `adjoint.py` | Backward adjoint solve; computes $\tilde{a}(t;\mathbf{X})$ given trajectory |
+| `adjoint.py` | Backward adjoint solve; computes $\tilde{a}(t;\mathbf{X})$ given trajectory (currently unwired) |
 | `losses.py` | $\mathcal{L}_\text{SOC}$, $\mathcal{L}_\text{AM}$, $\mathcal{L}_\text{RAM}$; assembles gradient from adjoint |
 | `operator.py` | Self-consistency operator $P$ and analytic-$u^*$ fixed-point sanity check (§9) |
-| `utils.py` | Euler–Maruyama step, time grids, $\sigma(t)$, VJP for $\nabla_x b$ |
+| `bimodal_target.py` | `GaussianMixtureTarget` — the two-component log-mixture reward shared by the `right_to_left_convergence_bimodal[_same_bm]` experiments: `grad_r`, `grad_g` / `grad_g_fn`, `optimal_control` / `optimal_control_fn` (Doob h-transform, carries $\kappa_i$), `terminal_mixture` / `terminal_pdf` |
+| `utils.py` | noise schedules, base-process bridge, Euler–Maruyama step, time grids; plus `sigma_int_from_nu` ($\Sigma_t = \nu_1 - \nu_t$), `simulate_paths` (EM rollout → `[len(ts), n, d]`), `rel_l2` (generic $\lVert u_\theta - u^*\rVert_2 / \lVert u^*\rVert_2$) |
 
 - **Store noise**: save $\{\varepsilon_n\}$ during the forward pass; reuse in the backward pass for consistent Brownian paths.
 - **VJPs not Jacobians**: compute $\tilde{a}(t)^\top \nabla_x b$ via `torch.autograd.functional.vjp` — never materialise the full $d \times d$ Jacobian.

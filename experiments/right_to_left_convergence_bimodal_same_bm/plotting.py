@@ -32,6 +32,23 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 
+def _save(fig, path, *, tight: bool = False) -> None:
+    """savefig + close + log, the common tail of every plot function."""
+    fig.savefig(path, dpi=150, bbox_inches="tight" if tight else None)
+    plt.close(fig)
+    log.info("Saved %s", path)
+
+
+def _thin_legend_handles(handles, labels, keep: int = 6):
+    """Evenly subsample (handles, labels) to at most `keep` entries, keeping the last."""
+    if len(handles) <= keep:
+        return handles, labels
+    idxs = list(range(0, len(handles), max(1, len(handles) // (keep - 1))))
+    if idxs[-1] != len(handles) - 1:
+        idxs.append(len(handles) - 1)
+    return [handles[i] for i in idxs], [labels[i] for i in idxs]
+
+
 def plot_optimal_control(ts, xs, u_star_field, d, output_dir, u_theta_field=None) -> None:
     """(t,x) heatmap of the analytic u* (and the final learned u_θ, if given).
 
@@ -68,7 +85,7 @@ def plot_optimal_control(ts, xs, u_star_field, d, output_dir, u_theta_field=None
         ax.set_title(r"Ground-truth optimal control $u^*(t,x)$", fontsize=11)
         fig.colorbar(im, ax=ax, label=r"$u^*(t,x)$")
     path = output_dir / "heatmap_u_star.png"
-    fig.savefig(path, dpi=150); plt.close(fig); log.info("Saved %s", path)
+    _save(fig, path)
 
 
 def _overlay_source_traj(ax, ts_arr, paths, n_show=40):
@@ -181,9 +198,7 @@ def plot_operator_vs_next_control(snapshots, ts, xs_op, d, output_dir,
                  "\n(one shared colour scale; black lines: trajectories under the "
                  r"source control $u_\theta^n$)", fontsize=12)
     path = output_dir / "heatmap_P_vs_next_control_traj.png"
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-    log.info("Saved %s", path)
+    _save(fig, path)
 
 
 def plot_terminal_distributions(paths_star, paths_theta, target_pdf_fn, d,
@@ -206,7 +221,7 @@ def plot_terminal_distributions(paths_star, paths_theta, target_pdf_fn, d,
     ax.set_xlabel(x_label); ax.set_ylabel("density")
     ax.set_title(r"Terminal distribution $X_1$"); ax.legend(fontsize=9); ax.grid(True, alpha=0.3)
     path = output_dir / "terminal_distributions.png"
-    fig.savefig(path, dpi=150); plt.close(fig); log.info("Saved %s", path)
+    _save(fig, path)
 
 
 # Robust "sup" percentile for the tiled / suffix-sup norms; set per run by
@@ -284,20 +299,14 @@ def plot_sbm_ratio(
     axes[1].grid(True, alpha=0.3)
 
     handles, labels = axes[1].get_legend_handles_labels()
-    if len(handles) > 6:
-        idxs = list(range(0, len(handles), max(1, len(handles) // 5)))
-        if idxs[-1] != len(handles) - 1:
-            idxs.append(len(handles) - 1)
-        handles = [handles[i] for i in idxs]; labels = [labels[i] for i in idxs]
+    handles, labels = _thin_legend_handles(handles, labels)
     fig.legend(handles, labels, fontsize=8, loc="lower center",
                ncol=min(len(handles), 6), bbox_to_anchor=(0.5, -0.08))
     fig.suptitle(
         r"Sanity-check ratio: $\|\mathbb{E}[\sigma\nabla g(X_T^{u_n})]-u^*\|\;/\;\|u_n-u^*\|_{[t,T]}$  ($\to 0$ as $t\to T$)",
         fontsize=11)
     path = output_dir / "sbm_ratio.png"
-    fig.savefig(path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    log.info("Saved %s", path)
+    _save(fig, path, tight=True)
 
 
 def plot_sbm_ratio_learned(
@@ -369,20 +378,14 @@ def plot_sbm_ratio_learned(
     axes[1].grid(True, alpha=0.3)
 
     handles, labels = axes[1].get_legend_handles_labels()
-    if len(handles) > 6:
-        idxs = list(range(0, len(handles), max(1, len(handles) // 5)))
-        if idxs[-1] != len(handles) - 1:
-            idxs.append(len(handles) - 1)
-        handles = [handles[i] for i in idxs]; labels = [labels[i] for i in idxs]
+    handles, labels = _thin_legend_handles(handles, labels)
     fig.legend(handles, labels, fontsize=8, loc="lower center",
                ncol=min(len(handles), 6), bbox_to_anchor=(0.5, -0.08))
     fig.suptitle(
         r"Learned-update ratio: $\|u_\theta^{n+1}-u^*\|\;/\;\|u_\theta^n-u^*\|_{[t,T]}$  ($\to 0$ as $t\to T$)",
         fontsize=11)
     path = output_dir / "sbm_ratio_learned.png"
-    fig.savefig(path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    log.info("Saved %s", path)
+    _save(fig, path, tight=True)
 
 
 def plot_fixed_point_residual(
@@ -438,9 +441,7 @@ def plot_fixed_point_residual(
         fontsize=12,
     )
     path = output_dir / "u_star_fixed_point_residual.png"
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-    log.info("Saved %s", path)
+    _save(fig, path)
 
 
 def plot_path_u_vs_Tu(
@@ -484,18 +485,11 @@ def plot_path_u_vs_Tu(
     ax.set_ylim(bottom=0.0)
     ax.grid(True, alpha=0.3)
     handles, labels = ax.get_legend_handles_labels()
-    if len(handles) > 6:
-        idxs = list(range(0, len(handles), max(1, len(handles) // 5)))
-        if idxs[-1] != len(handles) - 1:
-            idxs.append(len(handles) - 1)
-        handles = [handles[i] for i in idxs]
-        labels = [labels[i] for i in idxs]
+    handles, labels = _thin_legend_handles(handles, labels)
     ax.legend(handles, labels, fontsize=8, loc="upper left")
     fig.tight_layout()
     path = output_dir / "path_u_vs_Tu.png"
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-    log.info("Saved %s", path)
+    _save(fig, path)
 
 
 def plot_learned_pointwise_over_tiled(
@@ -582,9 +576,7 @@ def plot_learned_pointwise_over_tiled(
                      label="ratio", ticks=cbar_ticks,
                      extend="max" if vmax < data_max else "neither")
     path = output_dir / "learned_pointwise_over_tiled_traj.png"
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-    log.info("Saved %s", path)
+    _save(fig, path)
 
 
 def plot_path_u_vs_ustar_per_t_over_tiled(
@@ -637,18 +629,11 @@ def plot_path_u_vs_ustar_per_t_over_tiled(
     ax.set_ylim(bottom=0.0)
     ax.grid(True, alpha=0.3)
     handles, labels = ax.get_legend_handles_labels()
-    if len(handles) > 6:
-        idxs = list(range(0, len(handles), max(1, len(handles) // 5)))
-        if idxs[-1] != len(handles) - 1:
-            idxs.append(len(handles) - 1)
-        handles = [handles[i] for i in idxs]
-        labels = [labels[i] for i in idxs]
+    handles, labels = _thin_legend_handles(handles, labels)
     ax.legend(handles, labels, fontsize=8, loc="upper left")
     fig.tight_layout()
     path = output_dir / "path_u_vs_ustar_per_t_over_tiled.png"
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-    log.info("Saved %s", path)
+    _save(fig, path)
 
 
 def save_snapshots(data: dict, output_dir: str | Path) -> None:

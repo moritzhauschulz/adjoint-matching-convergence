@@ -9,6 +9,7 @@ from adjoint_sampling.operator import (
     operator_grid_field_all_times,
     fixed_point_residual_field,
 )
+from adjoint_sampling.bimodal_target import GaussianMixtureTarget
 from adjoint_sampling import utils
 
 __all__ = [
@@ -23,5 +24,6 @@ __all__ = [
     "operator_grid_field",
     "operator_grid_field_all_times",
     "fixed_point_residual_field",
+    "GaussianMixtureTarget",
     "utils",
 ]

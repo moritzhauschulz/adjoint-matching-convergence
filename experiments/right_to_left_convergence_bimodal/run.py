@@ -28,7 +28,8 @@ from omegaconf import DictConfig
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from adjoint_sampling import DriftMLP, Sampler, ReplayBuffer, ram_loss, utils
+from adjoint_sampling import DriftMLP, Sampler, ReplayBuffer, GaussianMixtureTarget, ram_loss, utils
+from adjoint_sampling.utils import simulate_paths
 from plotting import (plot_convergence, plot_heatmaps, plot_optimal_control,
                       plot_contraction_heatmaps, plot_control_evolution,
                       plot_terminal_distributions, plot_terminal_evolution,
@@ -37,97 +38,26 @@ from plotting import (plot_convergence, plot_heatmaps, plot_optimal_control,
 
 
 # ---------------------------------------------------------------------------
-# Analytic optimal control (full Feynman-Kac)  §4 of CLAUDE.md
+# Analytic optimal control — delegates to the shared GaussianMixtureTarget.
+# These wrappers keep the historical (scalar-arg) signatures used below;
+# constant σ ⇒ Σ_t = ∫_t^1 σ² ds = ν₁(1−t).
 # ---------------------------------------------------------------------------
 
-def sigma_integral(t: Tensor, sigma_fn) -> Tensor:
-    """Σ_t = ∫_t^1 σ(s)² ds = σ₀²(1−t) for constant σ."""
-    return sigma_fn(t) ** 2 * (1.0 - t)
+def _target(w1, lambda1, mu1, w2, lambda2, mu2) -> GaussianMixtureTarget:
+    return GaussianMixtureTarget(w1, lambda1, mu1, w2, lambda2, mu2)
 
 
-def A_component(x: Tensor, t: Tensor,
-                w: float, lambda_: float, mu_i: float,
-                sigma_fn, d: int) -> Tensor:
-    """A(t,x;w,λ,μ) = w/(1+λΣ_t)^{d/2} exp(−λ‖x−μ‖²/(2(1+λΣ_t))).
-
-    x: [B, d], t: [B] → [B].
-    """
-    Sigma_t = sigma_integral(t, sigma_fn)          # [B]
-    denom = 1.0 + lambda_ * Sigma_t                # [B]
-    sq_dist = ((x - mu_i) ** 2).sum(-1)            # [B]
-    log_A = (math.log(w)
-             - 0.5 * d * denom.log()
-             - lambda_ * sq_dist / (2.0 * denom))
-    return log_A.exp()                              # [B]
+def optimal_control(x, t, w1, lambda1, mu1, w2, lambda2, mu2, sigma_fn, nu_1, d):
+    return _target(w1, lambda1, mu1, w2, lambda2, mu2).optimal_control(
+        x, t, sigma_fn, lambda tt: nu_1 * (1.0 - tt), nu_1, d)
 
 
-def optimal_control(x: Tensor, t: Tensor,
-                    w1: float, lambda1: float, mu1: float,
-                    w2: float, lambda2: float, mu2: float,
-                    sigma_fn, nu_1: float, d: int) -> Tensor:
-    """u*(t,x) for the full adjoint sampling objective g = log p₁^base − r.
-
-    Effective parameters: λᵢ* = λᵢ − 1/ν₁,  μᵢ* = λᵢ μᵢ / λᵢ*.
-
-    Completing the square in −λᵢ(x₁−μᵢ)²/2 + x₁²/(2ν₁) leaves a mode-dependent
-    constant κᵢ = d·λᵢμᵢ²/(2ν₁λᵢ*) that MUST enter log Aᵢ; it cancels in the
-    softmax only for symmetric mixtures (μ₁²=μ₂², equal λ).
-    Log-space normalisation avoids 0/0 for x far from both modes.
-    Requires λᵢ > 1/ν₁.  x: [B, d], t: [B] → [B, d].
-    """
-    lambda1_star = lambda1 - 1.0 / nu_1
-    lambda2_star = lambda2 - 1.0 / nu_1
-    mu1_star = lambda1 * mu1 / lambda1_star
-    mu2_star = lambda2 * mu2 / lambda2_star
-    kappa1 = d * lambda1 * mu1 ** 2 / (2.0 * nu_1 * lambda1_star)
-    kappa2 = d * lambda2 * mu2 ** 2 / (2.0 * nu_1 * lambda2_star)
-    Sigma_t = sigma_integral(t, sigma_fn)
-    denom1 = (1.0 + lambda1_star * Sigma_t).unsqueeze(-1)       # [B, 1]
-    denom2 = (1.0 + lambda2_star * Sigma_t).unsqueeze(-1)
-    sq1 = ((x - mu1_star) ** 2).sum(-1, keepdim=True)           # [B, 1]
-    sq2 = ((x - mu2_star) ** 2).sum(-1, keepdim=True)
-    log_A1 = math.log(w1) + kappa1 - 0.5 * d * denom1.log() - lambda1_star * sq1 / (2.0 * denom1)
-    log_A2 = math.log(w2) + kappa2 - 0.5 * d * denom2.log() - lambda2_star * sq2 / (2.0 * denom2)
-    log_sum = torch.logaddexp(log_A1, log_A2)
-    n1 = (log_A1 - log_sum).exp()                               # softmax weight ∈ [0,1]
-    n2 = (log_A2 - log_sum).exp()
-    numer = (lambda1_star * (x - mu1_star) / denom1 * n1
-             + lambda2_star * (x - mu2_star) / denom2 * n2)
-    sigma_t = sigma_fn(t).unsqueeze(-1)
-    return -sigma_t * numer                                      # [B, d]
+def grad_r(x1, w1, lambda1, mu1, w2, lambda2, mu2):
+    return _target(w1, lambda1, mu1, w2, lambda2, mu2).grad_r(x1)
 
 
-def grad_r(x1: Tensor,
-           w1: float, lambda1: float, mu1: float,
-           w2: float, lambda2: float, mu2: float) -> Tensor:
-    """∇r(x₁) at t=T (Σ_T=0): A_i(T,x) = w_i exp(−λᵢ‖x−μᵢ‖²/2).
-
-    Uses log-space normalisation to avoid 0/0 when x is far from both modes.
-    x1: [B, d] → [B, d]
-    """
-    sq1 = ((x1 - mu1) ** 2).sum(-1, keepdim=True)
-    sq2 = ((x1 - mu2) ** 2).sum(-1, keepdim=True)
-    log_A1 = math.log(w1) - 0.5 * lambda1 * sq1
-    log_A2 = math.log(w2) - 0.5 * lambda2 * sq2
-    log_sum = torch.logaddexp(log_A1, log_A2)
-    n1 = (log_A1 - log_sum).exp()                  # softmax weight ∈ [0,1]
-    n2 = (log_A2 - log_sum).exp()
-    return -(lambda1 * (x1 - mu1) * n1 + lambda2 * (x1 - mu2) * n2)
-
-
-def terminal_mixture_params(
-    w1: float, lambda1: float, mu1: float,
-    w2: float, lambda2: float, mu2: float,
-) -> tuple[float, float, float, float, float, float]:
-    """Return (α₁, μ₁, v₁, α₂, μ₂, v₂) for p^{u*}(x₁) = Σ αᵢ N(μᵢ, vᵢ).
-
-    Full adjoint sampling objective: p^{u*} ∝ exp(r(x₁)), which normalises to
-    a mixture of N(μᵢ, 1/λᵢ) with weights αᵢ ∝ wᵢ/√λᵢ.  No σ₀ dependence.
-    """
-    a1 = w1 / math.sqrt(lambda1)
-    a2 = w2 / math.sqrt(lambda2)
-    norm = a1 + a2
-    return a1 / norm, mu1, 1.0 / lambda1, a2 / norm, mu2, 1.0 / lambda2
+def terminal_mixture_params(w1, lambda1, mu1, w2, lambda2, mu2):
+    return _target(w1, lambda1, mu1, w2, lambda2, mu2).terminal_mixture()
 
 
 # ---------------------------------------------------------------------------
@@ -214,37 +144,15 @@ def optimal_control_field(t_val: float,
 
 
 # ---------------------------------------------------------------------------
-# Sample path generation
+# Sample path generation  (simulate_paths is imported from adjoint_sampling.utils)
 # ---------------------------------------------------------------------------
-
-@torch.no_grad()
-def simulate_paths(control_fn, n_paths: int, ts: Tensor,
-                   d: int, sigma_fn, device) -> Tensor:
-    """Simulate n_paths Euler-Maruyama trajectories from X_0=0.
-
-    SDE: dX = σ(t) u(X,t) dt + σ(t) dB.
-    Returns [K+1, n_paths, d] tensor (full state at each time step).
-    Used for metric sampling (L₂) and as the base for euler_maruyama_paths.
-    """
-    x = torch.zeros(n_paths, d, device=device)
-    snapshots = [x.clone()]
-    for i in range(ts.shape[0] - 1):
-        t_vec = ts[i].expand(n_paths)
-        dt = (ts[i + 1] - ts[i]).item()
-        u = control_fn(x, t_vec)
-        sigma_t = sigma_fn(t_vec).unsqueeze(-1)
-        x = x + sigma_t * u * dt + sigma_t * math.sqrt(dt) * torch.randn_like(x)
-        snapshots.append(x.clone())
-    return torch.stack(snapshots, dim=0)   # [K+1, n_paths, d]
-
 
 @torch.no_grad()
 def euler_maruyama_paths(control_fn, n_paths: int, ts: Tensor,
                          d: int, sigma_fn, device) -> list[list[float]]:
     """Sample n_paths trajectories, returning [n_paths][K+1] first-coord values."""
-    all_steps = simulate_paths(control_fn, n_paths, ts, d, sigma_fn, device)
-    traj = all_steps[:, :, 0].tolist()   # [K+1][n_paths]
-    return [[traj[k][b] for k in range(len(traj))] for b in range(n_paths)]
+    traj = simulate_paths(control_fn, n_paths, ts, d, sigma_fn, device)[:, :, 0]  # [K+1, n]
+    return traj.T.tolist()
 
 
 # ---------------------------------------------------------------------------

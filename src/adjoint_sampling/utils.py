@@ -131,3 +131,41 @@ def euler_maruyama_step(
 def linspace_time(steps: int, device=None) -> Tensor:
     """Uniform grid 0 = t_0 < t_1 < … < t_N = 1."""
     return torch.linspace(0.0, 1.0, steps + 1, device=device)
+
+
+def sigma_int_from_nu(nu_fn, nu_1: float):
+    """Σ_t = ∫_t^1 σ(s)² ds = ν_1 − ν_t  as a callable (schedule-agnostic)."""
+    return lambda t: nu_1 - nu_fn(t)
+
+
+# ---------------------------------------------------------------------------
+# Evaluation helpers (uncontrolled by autograd)
+# ---------------------------------------------------------------------------
+
+@torch.no_grad()
+def simulate_paths(control_fn, n_paths: int, ts: Tensor, d: int, sigma_fn, device) -> Tensor:
+    """Euler–Maruyama rollout of `control_fn` from X_0 = 0 on the grid `ts`.
+
+    Returns the trajectory stack [len(ts), n_paths, d].
+    """
+    x = torch.zeros(n_paths, d, device=device)
+    steps = [x.clone()]
+    for i in range(ts.shape[0] - 1):
+        t_vec = ts[i].expand(n_paths)
+        dt = (ts[i + 1] - ts[i]).item()
+        s = sigma_fn(t_vec).unsqueeze(-1)
+        x = x + s * control_fn(x, t_vec) * dt + s * math.sqrt(dt) * torch.randn_like(x)
+        steps.append(x.clone())
+    return torch.stack(steps, dim=0)
+
+
+@torch.no_grad()
+def rel_l2(u_theta, x_samples: Tensor, t_val: float, u_star_fn) -> float:
+    """‖u_θ(·,t) − u*(·,t)‖₂ / ‖u*(·,t)‖₂  over `x_samples` (NaN if u* ≈ 0)."""
+    t = torch.full((x_samples.shape[0],), t_val, device=x_samples.device)
+    u_hat = u_theta(x_samples, t)
+    u_star = u_star_fn(x_samples, t)
+    den = u_star.pow(2).sum(-1).mean().item()
+    if den < 1e-12:
+        return float("nan")
+    return math.sqrt((u_hat - u_star).pow(2).sum(-1).mean().item() / den)

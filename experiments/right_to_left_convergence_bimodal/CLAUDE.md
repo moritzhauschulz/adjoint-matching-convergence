@@ -94,12 +94,15 @@ $L_\infty$ uses a uniform x-grid centred at $(\mu_1+\mu_2)/2$ with half-width `l
 
 ## 7. Implementation notes
 
-- `sigma_integral(t)` — $\Sigma_t = \sigma_0^2(1-t)$
-- `A_component(x, t, w, lam, mu_i, sigma_fn, d)` — $A_i^*(t,x)$ (called with starred params)
-- `optimal_control(x, t, w1, lambda1, mu1, w2, lambda2, mu2, sigma_fn, nu_1, d)` — effective params + $\kappa_i$ derived internally; asserts $\lambda_i > 1/\nu_1$. **2026-08-29:** added the $\kappa_i = d\lambda_i\mu_i^2/(2\nu_1\lambda_i^*)$ term to `log_A1`/`log_A2` (was missing — only affected asymmetric mixtures; the default $\pm 3$ config is unchanged).
-- `grad_r(x1, w1, lambda1, mu1, w2, lambda2, mu2)` — $\nabla r(x_1)$ (internal helper)
-- `grad_g_fn(x1)` inside `main` — returns $\nabla g = -x_1/\nu_1 - \nabla r(x_1)$ (stored in replay buffer)
-- `terminal_mixture_params(w1, lambda1, mu1, w2, lambda2, mu2)` — returns $(\alpha_1, \mu_1, 1/\lambda_1, \alpha_2, \mu_2, 1/\lambda_2)$; no $\sigma_0$ parameter
+- **2026-08-29:** `optimal_control` / `grad_r` / `terminal_mixture_params` are now
+  thin wrappers that delegate to `adjoint_sampling.GaussianMixtureTarget` (the
+  shared two-component reward — see `src/adjoint_sampling/bimodal_target.py` and
+  §4). The wrappers keep the historical scalar-arg signatures used in `main`;
+  constant σ ⇒ $\Sigma_t = \nu_1(1-t)$ is passed as `sigma_int_fn`.  The κ_i fix
+  (missing $\kappa_i = d\lambda_i\mu_i^2/(2\nu_1\lambda_i^*)$ in `log_A_i`; only
+  affected asymmetric mixtures) now lives in the shared class.  `simulate_paths`
+  is imported from `adjoint_sampling.utils`.
+- `grad_g_fn(x1)` inside `main` — $\nabla g = -x_1/\nu_1 - \nabla r(x_1)$ (stored in replay buffer)
 - `target_params` dict written to `metrics.json`: `{w1, lambda1, mu1, w2, lambda2, mu2}` (no `sigma`)
 
 Config key `sigma` sets $\sigma_0$ (used by `sigma_fn` and to compute $\nu_1$).

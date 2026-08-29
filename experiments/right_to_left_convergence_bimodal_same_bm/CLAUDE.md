@@ -210,19 +210,28 @@ where $\mathrm{PathUstar}_\mathrm{prev}^{n+1}(t) = \mathbb{E}_{X^{u^{n+1}_\theta
 Both share the outer/inner cadence, frozen-$\bar u$ semantics, iteration indexing,
 and eval path. `am` costs ~`sampler.steps`× the per-inner-step network evals.
 
-### Core functions (`run.py`)
+### Code structure (`run.py`)
 
-- `optimal_control(x, t, w1, λ1, μ1, w2, λ2, μ2, sigma_fn, sigma_int_fn, ν1, d)`
-  — analytic $u^*$ via the Doob $h$-transform (see §4 of the bimodal CLAUDE.md; carries $\kappa_i$)
-- `grad_r`, `terminal_mixture_params`, `_grad_g_bimodal` ($\nabla g = -x/\nu_1 - \nabla r$)
-- `operator_field_all_times(u_fn, xs, ts, ...)` — $P(u)(t_k,x)$ for **all** $t_k$ in one
-  batched EM pass → `[K+1, n_grid, d]`; wraps `adjoint_sampling.operator.operator_grid_field_all_times`
-- `operator_field_at_points(u_fn, x_states, t_start, ts, ...)` — $P(u)(t,x)$ at arbitrary
-  `[n_pts, d]` states (path-based metric)
-- `adjoint_sampling.operator.fixed_point_residual_field(u_star_fn, grad_g_fn, xs, ts, ...)`
-  — $\|P(u^*)-u^*\|$ mesh (§5.0); shared across experiments
-- `simulate_paths` / `euler_maruyama_paths` — EM rollout of a control
-- `rel_l2` — the RelL2 stdout log line (not stored per-field)
+`main` builds an `EvalContext` (`build_context`), constructs the net / sampler /
+buffer, runs the §5.0 `fixed_point_check` once, then the outer loop:
+
+```
+for outer_it in range(-1, N):            # outer_it = -1 records the init net as snap 0
+    if outer_it >= 0:  run_inner_loop(...)         # RAM or AM inner optimisation
+    if eval-due:       snapshots.append(evaluate(net, prev_net, snap_it, ctx))
+write_outputs(output_dir, ...)           # save_snapshots + the 9 plots
+```
+
+- `EvalContext` — frozen bundle of the target, schedule fns, grids, `u_star_fn`,
+  `grad_g_fn`, and the eval config; passed to `evaluate` / `run_inner_loop`.
+- `evaluate` → one snapshot dict.  Op-eval fields (`_OP_SNAPSHOT_KEYS`) are `None`
+  unless `do_op_eval and snap_it % op_every == 0`; `_op_eval` does the grid-based
+  §5.1 fields + ratios and the path-based metrics.
+- The target maths lives in `adjoint_sampling.GaussianMixtureTarget`
+  (`optimal_control`, `grad_r`, `grad_g`, `terminal_mixture` / `terminal_pdf`);
+  `utils.simulate_paths` / `utils.rel_l2` / `utils.sigma_int_from_nu` are shared.
+- `operator_all_times` / `operator_at_points` — thin wrappers binding the target's
+  `grad_g_fn` and deferring to `adjoint_sampling.operator`.
 
 ### Config keys under `eval`
 
@@ -292,6 +301,23 @@ $P(u)(T,x) = u^*(T,x) = -\sigma(T)\nabla g(x)$ for **all** $u$ (Feynman-Kac at $
 ---
 
 ## 7. Revision history
+
+### 2026-08-29 — modularity pass (shared target, decomposed main, plotting helpers)
+
+- **Shared target.** `optimal_control` / `grad_r` / `terminal_mixture_params` (also
+  duplicated in `right_to_left_convergence_bimodal`) moved to
+  `src/adjoint_sampling/bimodal_target.py` as `GaussianMixtureTarget`, a frozen
+  dataclass — collapses the `w1, λ1, μ1, w2, λ2, μ2` arg tuple to one object.
+  `simulate_paths`, `rel_l2` (now generic, takes `u_star_fn`), and
+  `sigma_int_from_nu` moved to `utils.py`.
+- **`main` decomposed** into `build_context` → `EvalContext`, `run_inner_loop`,
+  `evaluate` (+ `_op_eval`), `fixed_point_check`, `write_outputs`.  `main` is now
+  the ~20-line orchestration.  Behaviour unchanged (same snapshots, same 9 plots).
+- **`plotting.py`** — `_save(fig, path)` and `_thin_legend_handles` replace the
+  repeated savefig/close/log and legend-subsample blocks.
+- `right_to_left_convergence_bimodal/run.py` now delegates its `optimal_control` /
+  `grad_r` / `terminal_mixture_params` to `GaussianMixtureTarget` (constant σ ⇒
+  $\Sigma_t = \nu_1(1-t)$) and imports `simulate_paths`.
 
 ### 2026-08-29 — plotting cut to the 9 notes figures; eval block trimmed
 
