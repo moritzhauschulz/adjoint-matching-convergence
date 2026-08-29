@@ -302,13 +302,19 @@ $P(u)(T,x) = u^*(T,x) = -\sigma(T)\nabla g(x)$ for **all** $u$ (Feynman-Kac at $
 
 ## 7. Revision history
 
-### 2026-08-29 — `network.time_embedding`: sinusoidal vs raw t
+### 2026-08-29 — `network.time_embedding`: raw t is now this experiment's default
 
-`DriftMLP` gained a `time_embedding` argument (`src/adjoint_sampling/network.py`),
-exposed as `network.time_embedding` ∈ {`"sinusoidal"` (default, `t_emb_dim`
-features), `"raw"` (the scalar $t$ itself — absolute $(x,t)$ coordinates)}.
-`"raw"` makes the MLP input `concat(x, t)`, dimension $d+1$.  Wired into this
-experiment's `run.py`; other experiments keep the sinusoidal default.
+`DriftMLP` gained a `time_embedding` argument (`src/adjoint_sampling/network.py`)
+∈ {`"raw"` (the scalar $t$ itself — MLP input `concat(x, t)`, dim $d+1$;
+absolute $(x,t)$ coordinates), `"sinusoidal"` (`t_emb_dim` features)}.  A keeper
+RAM comparison (constant σ=2, symmetric ±3, 10 iters) found `raw` learns the
+smooth interior ~2× better (RelL2 at $t{=}0.5$: 0.08 vs 0.17; at $t{=}0.75$:
+0.07 vs 0.12), ~equal at the endpoints, and unchanged tiled-sup / sanity ratio
+(outlier-limited).  So `network.time_embedding: raw` is now the default in
+`configs/experiment/right_to_left_convergence_bimodal_same_bm.yaml` and the
+`run.py` fallback.  The `DriftMLP` **class** default stays `"sinusoidal"`; the
+other three experiments are unchanged.
+Runs: `results/run/2026-08-29_temb_{raw,sinusoidal}_const2_sym/`.
 
 ### 2026-08-29 — modularity pass (shared target, decomposed main, plotting helpers)
 

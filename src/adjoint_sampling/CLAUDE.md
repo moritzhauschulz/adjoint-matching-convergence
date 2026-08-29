@@ -123,7 +123,7 @@ $$\tilde{a}(t_{n-1};\mathbf{X}) = \tilde{a}(t_n;\mathbf{X}) + \tilde{a}(t_n;\mat
 
 | File | Responsibility |
 |---|---|
-| `network.py` | `DriftMLP` $u_\theta(x,t)$: `concat(x, time_features(t))` → SiLU MLP. `time_embedding` = `"sinusoidal"` (`t_emb_dim` features, default) or `"raw"` (the scalar $t$ — absolute $(x,t)$ coordinates) |
+| `network.py` | `DriftMLP` $u_\theta(x,t)$: `concat(x, time_features(t))` → SiLU MLP. `time_embedding` = `"sinusoidal"` (`t_emb_dim` features; class default) or `"raw"` (the scalar $t$ — absolute $(x,t)$ coordinates; the `bimodal_same_bm` experiment defaults to this) |
 | `sampler.py` | Forward SDE rollout; stores trajectory $\{X_n\}$ and noise $\{\varepsilon_n\}$ |
 | `adjoint.py` | Backward adjoint solve; computes $\tilde{a}(t;\mathbf{X})$ given trajectory (currently unwired) |
 | `losses.py` | $\mathcal{L}_\text{SOC}$, $\mathcal{L}_\text{AM}$, $\mathcal{L}_\text{RAM}$; assembles gradient from adjoint |
