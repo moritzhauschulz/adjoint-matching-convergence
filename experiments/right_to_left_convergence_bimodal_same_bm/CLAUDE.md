@@ -302,6 +302,14 @@ $P(u)(T,x) = u^*(T,x) = -\sigma(T)\nabla g(x)$ for **all** $u$ (Feynman-Kac at $
 
 ## 7. Revision history
 
+### 2026-08-29 — `network.time_embedding`: sinusoidal vs raw t
+
+`DriftMLP` gained a `time_embedding` argument (`src/adjoint_sampling/network.py`),
+exposed as `network.time_embedding` ∈ {`"sinusoidal"` (default, `t_emb_dim`
+features), `"raw"` (the scalar $t$ itself — absolute $(x,t)$ coordinates)}.
+`"raw"` makes the MLP input `concat(x, t)`, dimension $d+1$.  Wired into this
+experiment's `run.py`; other experiments keep the sinusoidal default.
+
 ### 2026-08-29 — modularity pass (shared target, decomposed main, plotting helpers)
 
 - **Shared target.** `optimal_control` / `grad_r` / `terminal_mixture_params` (also

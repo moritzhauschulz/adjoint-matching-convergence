@@ -499,7 +499,8 @@ def main(cfg: DictConfig) -> None:
 
     ctx, objective = build_context(cfg, device)
     net = DriftMLP(d=ctx.d, hidden_dim=cfg.network.hidden_dim,
-                   n_layers=cfg.network.n_layers, t_emb_dim=cfg.network.t_emb_dim).to(device)
+                   n_layers=cfg.network.n_layers, t_emb_dim=cfg.network.t_emb_dim,
+                   time_embedding=cfg.network.get("time_embedding", "sinusoidal")).to(device)
     sampler = Sampler(ctx.sigma_fn, steps=cfg.sampler.steps)
     buffer = ReplayBuffer(max_size=cfg.algorithm.buffer_size)
     optim = torch.optim.Adam(net.parameters(), lr=cfg.training.lr)

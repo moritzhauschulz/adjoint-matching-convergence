@@ -31,6 +31,7 @@ network:
   hidden_dim: 128
   n_layers: 3
   t_emb_dim: 32
+  time_embedding: sinusoidal   # "sinusoidal" (t_emb_dim features) or "raw" (feed the scalar t — absolute (x,t) coords)
 
 training:
   outer_iterations: 50

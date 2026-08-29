@@ -27,7 +27,9 @@ class SinusoidalTimeEmbedding(nn.Module):
 class DriftMLP(nn.Module):
     """MLP drift network  u_θ : ℝ^d × [0,1] → ℝ^d.
 
-    Input: concat(x, sinusoidal_time_embedding(t))
+    Input: concat(x, time_features(t)).  `time_embedding`:
+      "sinusoidal"  — `t_emb_dim` sinusoidal features (default)
+      "raw"         — the scalar t itself (absolute (x, t) coordinates)
     Output: u ∈ ℝ^d
     """
 
@@ -37,11 +39,22 @@ class DriftMLP(nn.Module):
         hidden_dim: int = 128,
         n_layers: int = 3,
         t_emb_dim: int = 32,
+        time_embedding: str = "sinusoidal",
     ):
         super().__init__()
         assert n_layers >= 1
-        self.t_emb = SinusoidalTimeEmbedding(t_emb_dim)
-        dims = [d + t_emb_dim] + [hidden_dim] * n_layers + [d]
+        if time_embedding == "sinusoidal":
+            self.t_emb = SinusoidalTimeEmbedding(t_emb_dim)
+            n_t_features = t_emb_dim
+        elif time_embedding == "raw":
+            self.t_emb = None
+            n_t_features = 1
+        else:
+            raise ValueError(
+                f"time_embedding must be 'sinusoidal' or 'raw', got {time_embedding!r}")
+        self.time_embedding = time_embedding
+
+        dims = [d + n_t_features] + [hidden_dim] * n_layers + [d]
         layers: list[nn.Module] = []
         for i in range(len(dims) - 1):
             layers.append(nn.Linear(dims[i], dims[i + 1]))
@@ -50,11 +63,6 @@ class DriftMLP(nn.Module):
         self.net = nn.Sequential(*layers)
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
-        """
-        Args:
-            x: [B, d]
-            t: [B]
-        Returns:
-            u: [B, d]
-        """
-        return self.net(torch.cat([x, self.t_emb(t)], dim=-1))
+        """x: [B, d], t: [B] → u: [B, d]."""
+        t_feat = t[:, None] if self.t_emb is None else self.t_emb(t)
+        return self.net(torch.cat([x, t_feat], dim=-1))
