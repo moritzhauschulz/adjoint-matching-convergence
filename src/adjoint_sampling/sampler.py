@@ -26,39 +26,24 @@ class Sampler:
 
     @torch.no_grad()
     def sample(self, u_theta: nn.Module, batch_size: int, d: int, device) -> Tensor:
-        """Sample X_1 ~ p_1^(stopgrad(u_θ)).
-
-        Returns:
-            x1: [batch_size, d]
-        """
+        """Sample X_1 ~ p_1^(stopgrad(u_θ))  → [batch_size, d]."""
         ts = linspace_time(self.steps, device=device)
         x = torch.zeros(batch_size, d, device=device)
         for n in range(self.steps):
             t = ts[n].expand(batch_size)
-            u = u_theta(x, t)
-            sigma = self.sigma_fn(t)
-            x, _ = euler_maruyama_step(x, u, sigma, self.dt)
+            x = euler_maruyama_step(x, u_theta(x, t), self.sigma_fn(t), self.dt)
         return x
 
     @torch.no_grad()
     def sample_trajectory(
         self, u_theta: nn.Module, batch_size: int, d: int, device
-    ) -> tuple[list[Tensor], list[Tensor]]:
-        """Sample a full trajectory and store noise — needed for L_AM.
-
-        Returns:
-            xs:   list of [batch_size, d] tensors, length N+1 (t_0 to t_N)
-            epss: list of [batch_size, d] noise tensors, length N
-        """
+    ) -> list[Tensor]:
+        """Full trajectory {X_n} (needed for L_AM): list of [batch_size, d], length N+1."""
         ts = linspace_time(self.steps, device=device)
         x = torch.zeros(batch_size, d, device=device)
         xs = [x]
-        epss: list[Tensor] = []
         for n in range(self.steps):
             t = ts[n].expand(batch_size)
-            u = u_theta(x, t)
-            sigma = self.sigma_fn(t)
-            x, eps = euler_maruyama_step(x, u, sigma, self.dt)
+            x = euler_maruyama_step(x, u_theta(x, t), self.sigma_fn(t), self.dt)
             xs.append(x)
-            epss.append(eps)
-        return xs, epss
+        return xs

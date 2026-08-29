@@ -186,7 +186,7 @@ def main(cfg: DictConfig) -> None:
                 device=device,
             )
 
-            xs, _ = sampler.sample_trajectory(net, cfg.eval.n_rollout, d, device)
+            xs = sampler.sample_trajectory(net, cfg.eval.n_rollout, d, device)
             x1_eval = xs[-1]
             lsoc = soc_objective(net, xs, g_fn, sigma_fn, steps=cfg.sampler.steps).item()
             w2sq = w2_squared(x1_eval, m, c)

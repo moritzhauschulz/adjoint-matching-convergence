@@ -307,7 +307,7 @@ def run_inner_loop(net: nn.Module, optim, cfg: DictConfig, objective: str,
         # Lean adjoint ≡ ∇g(X_1) here (base drift 0) so am_loss's constant target
         # is exact.  am_loss carries NO λ(t)=1/σ² weight (ram_loss does) — kept
         # deliberately; reconcile before a quantitative RAM-vs-AM comparison.
-        traj_xs, _ = sampler.sample_trajectory(net, n_outer, d, device)
+        traj_xs = sampler.sample_trajectory(net, n_outer, d, device)
         am_traj = torch.stack(traj_xs, dim=0)                 # [steps+1, n_outer, d]
         am_gg = ctx.grad_g_fn(am_traj[-1])
     else:

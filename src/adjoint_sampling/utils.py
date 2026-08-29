@@ -103,17 +103,10 @@ def sample_base_conditional(x1: Tensor, t: Tensor, nu_t: Tensor, nu_1: float) ->
 # Euler-Maruyama step
 # ---------------------------------------------------------------------------
 
-def euler_maruyama_step(
-    x: Tensor, u: Tensor, sigma: Tensor, dt: float
-) -> tuple[Tensor, Tensor]:
-    """X_{n+1} = X_n + σ(t_n) u(X_n, t_n) dt + σ(t_n) √dt ε_n.
-
-    Returns (x_next, eps) where eps ~ N(0, I) is stored for the backward pass.
-    """
-    extra = [1] * (x.dim() - 1)
-    s = sigma.reshape(-1, *extra)
-    eps = torch.randn_like(x)
-    return x + s * u * dt + s * (dt ** 0.5) * eps, eps
+def euler_maruyama_step(x: Tensor, u: Tensor, sigma: Tensor, dt: float) -> Tensor:
+    """X_{n+1} = X_n + σ(t_n) u(X_n, t_n) dt + σ(t_n) √dt ε_n,  ε_n ~ N(0, I)."""
+    s = sigma.reshape(-1, *([1] * (x.dim() - 1)))
+    return x + s * u * dt + s * (dt ** 0.5) * torch.randn_like(x)
 
 
 def linspace_time(steps: int, device=None) -> Tensor:

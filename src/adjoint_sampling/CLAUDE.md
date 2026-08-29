@@ -129,7 +129,7 @@ $$\tilde{a}(t_{n-1};\mathbf{X}) = \tilde{a}(t_n;\mathbf{X}) + \tilde{a}(t_n;\mat
 | File | Responsibility |
 |---|---|
 | `network.py` | `DriftMLP` $u_\theta(x,t)$: `concat(x, time_features(t))` → SiLU MLP. `time_embedding` = `"sinusoidal"` (`t_emb_dim` features; class default) or `"raw"` (the scalar $t$ — absolute $(x,t)$ coordinates; the `bimodal_same_bm` experiment defaults to this) |
-| `sampler.py` | Forward SDE rollout; stores trajectory $\{X_n\}$ and noise $\{\varepsilon_n\}$ |
+| `sampler.py` | `Sampler.sample` (→ $X_1$) and `sample_trajectory` (→ $\{X_n\}$), forward SDE rollout under stopgrad $u_\theta$ |
 | `losses.py` | $\mathcal{L}_\text{SOC}$, $\mathcal{L}_\text{AM}$, $\mathcal{L}_\text{RAM}$ — adjoint is the constant $\nabla g(X_1)$ here (§4), so no solver |
 | `operator.py` | Self-consistency operator $P$ and analytic-$u^*$ fixed-point sanity check (§9) |
 | `bimodal_target.py` | `GaussianMixtureTarget` — the two-component log-mixture reward shared by the `right_to_left_convergence_bimodal[_same_bm]` experiments: `grad_r`, `grad_g` / `grad_g_fn`, `optimal_control` / `optimal_control_fn` (Doob h-transform, carries $\kappa_i$), `terminal_mixture` / `terminal_pdf` |
@@ -137,7 +137,6 @@ $$\tilde{a}(t_{n-1};\mathbf{X}) = \tilde{a}(t_n;\mathbf{X}) + \tilde{a}(t_n;\mat
 
 - **Replay buffer**: cache $(X_1^{(i)}, \nabla g^{(i)})$ pairs in buffer $\mathcal{B}$ to amortise energy evaluations (Algorithm 1 in paper). $\nabla g(x_1) = -x_1/\nu_1 - \nabla r(x_1)$ is stored; the RAM loss target $-\sigma\nabla g$ is recovered directly.
 - **Stop-gradient**: for $\mathcal{L}_\text{RAM}$ / $\mathcal{L}_\text{AM}$, roll out under $\bar{u} = \text{stopgrad}(u_\theta)$ (frozen at the start of each outer iteration).
-- `Sampler.sample_trajectory` still returns the per-step noise $\{\varepsilon_n\}$ (it was needed for an explicit adjoint solve); no current caller uses it.
 
 ---
 
