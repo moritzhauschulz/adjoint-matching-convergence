@@ -43,17 +43,22 @@ where $r(x)$ is the log-density of the target up to a constant: $p^*(x) \propto 
 
 ## 4. Adjoint state equations
 
-Given a realised trajectory $\mathbf{X} = \{X_t : 0 \le t \le 1\}$, the **lean adjoint state** $\tilde{a}(t;\mathbf{X}) \in \mathbb{R}^d$ satisfies the backward ODE:
+Given a realised trajectory $\mathbf{X} = \{X_t : 0 \le t \le 1\}$, the adjoint
+state $\tilde{a}(t;\mathbf{X}) \in \mathbb{R}^d$ satisfies the backward ODE
 
-$$\frac{d\tilde{a}(t;\mathbf{X})}{dt} = -\tilde{a}(t;\mathbf{X})^\top \nabla_x b(X_t, t), \qquad t \in [0,1]$$
+$$\frac{d\tilde{a}(t;\mathbf{X})}{dt} = -\tilde{a}(t;\mathbf{X})^\top \nabla_x f(X_t, t), \qquad \tilde{a}(1;\mathbf{X}) = \nabla g(X_1)$$
 
-with terminal condition:
+and gives the functional derivative of $\mathcal{L}_\text{SOC}$ w.r.t. $u$ without
+backpropagating through the SDE solver.  **Adjoint Matching** uses the
+*reference* drift $f$ here (not the controlled $b = \sigma u_\theta$) — the term
+$\nabla_x u_\theta$ is the source of the fine-tuning bias AM removes.
 
-$$\tilde{a}(1;\mathbf{X}) = \nabla g(X_1)$$
-
-where $\nabla_x b(X_t,t) = \sigma(t)\,\nabla_x u(X_t,t)$ is the Jacobian of the drift w.r.t. $x$.
-
-The adjoint provides the functional derivative of $\mathcal{L}_\text{SOC}$ w.r.t. $u$ without backpropagating through the SDE solver.
+This repo's base process is $dX_t = \sigma(t)\,dB_t$ ($f \equiv 0$), so
+$\nabla_x f = 0$ and $\tilde{a}(t) \equiv \nabla g(X_1)$ is **constant**.  That
+is exactly the target used by $\mathcal{L}_\text{RAM}$ and $\mathcal{L}_\text{AM}$
+(`losses.py`) — no explicit adjoint solve is needed, so no adjoint solver is
+implemented.  A time-varying $\tilde{a}$ would only arise for a base process with
+non-zero drift.
 
 ---
 
@@ -125,16 +130,14 @@ $$\tilde{a}(t_{n-1};\mathbf{X}) = \tilde{a}(t_n;\mathbf{X}) + \tilde{a}(t_n;\mat
 |---|---|
 | `network.py` | `DriftMLP` $u_\theta(x,t)$: `concat(x, time_features(t))` → SiLU MLP. `time_embedding` = `"sinusoidal"` (`t_emb_dim` features; class default) or `"raw"` (the scalar $t$ — absolute $(x,t)$ coordinates; the `bimodal_same_bm` experiment defaults to this) |
 | `sampler.py` | Forward SDE rollout; stores trajectory $\{X_n\}$ and noise $\{\varepsilon_n\}$ |
-| `adjoint.py` | Backward adjoint solve; computes $\tilde{a}(t;\mathbf{X})$ given trajectory (currently unwired) |
-| `losses.py` | $\mathcal{L}_\text{SOC}$, $\mathcal{L}_\text{AM}$, $\mathcal{L}_\text{RAM}$; assembles gradient from adjoint |
+| `losses.py` | $\mathcal{L}_\text{SOC}$, $\mathcal{L}_\text{AM}$, $\mathcal{L}_\text{RAM}$ — adjoint is the constant $\nabla g(X_1)$ here (§4), so no solver |
 | `operator.py` | Self-consistency operator $P$ and analytic-$u^*$ fixed-point sanity check (§9) |
 | `bimodal_target.py` | `GaussianMixtureTarget` — the two-component log-mixture reward shared by the `right_to_left_convergence_bimodal[_same_bm]` experiments: `grad_r`, `grad_g` / `grad_g_fn`, `optimal_control` / `optimal_control_fn` (Doob h-transform, carries $\kappa_i$), `terminal_mixture` / `terminal_pdf` |
 | `utils.py` | noise schedules, base-process bridge, Euler–Maruyama step, time grids; plus `sigma_int_from_nu` ($\Sigma_t = \nu_1 - \nu_t$), `simulate_paths` (EM rollout → `[len(ts), n, d]`), `rel_l2` (generic $\lVert u_\theta - u^*\rVert_2 / \lVert u^*\rVert_2$) |
 
-- **Store noise**: save $\{\varepsilon_n\}$ during the forward pass; reuse in the backward pass for consistent Brownian paths.
-- **VJPs not Jacobians**: compute $\tilde{a}(t)^\top \nabla_x b$ via `torch.autograd.functional.vjp` — never materialise the full $d \times d$ Jacobian.
 - **Replay buffer**: cache $(X_1^{(i)}, \nabla g^{(i)})$ pairs in buffer $\mathcal{B}$ to amortise energy evaluations (Algorithm 1 in paper). $\nabla g(x_1) = -x_1/\nu_1 - \nabla r(x_1)$ is stored; the RAM loss target $-\sigma\nabla g$ is recovered directly.
-- **Stop-gradient**: when computing $\mathcal{L}_\text{RAM}$, use $\bar{u} = \text{stopgrad}(u)$ for the rollout policy to stabilise training.
+- **Stop-gradient**: for $\mathcal{L}_\text{RAM}$ / $\mathcal{L}_\text{AM}$, roll out under $\bar{u} = \text{stopgrad}(u_\theta)$ (frozen at the start of each outer iteration).
+- `Sampler.sample_trajectory` still returns the per-step noise $\{\varepsilon_n\}$ (it was needed for an explicit adjoint solve); no current caller uses it.
 
 ---
 
