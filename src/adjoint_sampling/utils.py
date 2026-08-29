@@ -1,8 +1,7 @@
-"""Noise schedules, base process distributions, and Euler-Maruyama step.
+"""Noise schedules, the base-process bridge, Euler-Maruyama step, and eval helpers.
 
 Notation follows arXiv:2504.11713.
-Base process: dX_t = σ(t) dB_t, X_0 = 0.
-Marginal variance: ν_t = ∫_0^t σ(s)² ds.
+Base process: dX_t = σ(t) dB_t, X_0 = 0.  Marginal variance: ν_t = ∫_0^t σ(s)² ds.
 """
 
 import math
@@ -85,19 +84,8 @@ def make_noise_schedule(name: str = "constant", sigma: float = 1.0, floor: float
 
 
 # ---------------------------------------------------------------------------
-# Base process: log-density, score, and bridge conditional
+# Base process bridge  p_{t|1}^base(·|X_1)
 # ---------------------------------------------------------------------------
-
-def log_p1_base(x: Tensor, nu_1: float) -> Tensor:
-    """log p_1^base(x) = −d/2 log(2π ν_1) − ‖x‖² / (2 ν_1)."""
-    d = x.shape[-1]
-    return -0.5 * d * math.log(2 * math.pi * nu_1) - x.pow(2).sum(-1) / (2.0 * nu_1)
-
-
-def grad_log_p1_base(x: Tensor, nu_1: float) -> Tensor:
-    """∇_x log p_1^base(x) = −x / ν_1."""
-    return -x / nu_1
-
 
 def sample_base_conditional(x1: Tensor, t: Tensor, nu_t: Tensor, nu_1: float) -> Tensor:
     """Sample X_t ~ p_{t|1}^base(·|X_1) = N(ν_t/ν_1 · x1, ν_{t|1} · I).
