@@ -6,6 +6,9 @@ Evaluate the convergence properties and capabilities of the adjoint matching alg
 ## Scientific Rigor
 This codebase should accurately represent any underlying mathematics. If in doubt about underlying mathematics, i.e. when you cannot reliably verify their correctness or their correspondence to the user's requests, ask for clarification. Mathematical accuracy is the single most important principle in this repository. All mathematics in CLAUDE.md files should be rendered in LaTeX (or similar human readable form).
 
+## Project Notes (project_notes.tm)
+The entire purpose of the repo is to demonstrate (or refute) theoretical findings in the project_notes.tm file. This file is entirely human written, and is usually updated before any new implementation. Please always review the file, and align the CLAUDE.mds accordingly. NEVER edit the project_notes.tm. If you find a mistake, please alert the user.
+
 ## Maintenance
 Update this CLAUDE.md file regularly, especially after structural changes or new implementations. Always ask the user to approve changes, never change CLAUDE.md without approval.
 

@@ -30,6 +30,16 @@ def sigma_constant(sigma: float = 1.0):
     return fn
 
 
+def sigma_linear(sigma: float = 1.0, floor: float = 0.0):
+    """σ(t) = sigma · (floor + (1 − floor)(1 − t))  — linear from sigma at t=0
+    down to  floor·sigma  at t=1.  floor=0 ⇒ vanishing linear; floor=1 ⇒ constant.
+    """
+    b = 1.0 - floor
+    def fn(t: Tensor) -> Tensor:
+        return sigma * (1.0 - b * t)
+    return fn
+
+
 # ---------------------------------------------------------------------------
 # Marginal variance  ν_t = ∫_0^t σ(s)² ds
 # ---------------------------------------------------------------------------
@@ -39,6 +49,39 @@ def nu_constant(sigma: float = 1.0):
     def fn(t: Tensor) -> Tensor:
         return sigma ** 2 * t
     return fn
+
+
+def nu_linear(sigma: float = 1.0, floor: float = 0.0):
+    """ν_t = ∫_0^t σ² ds for σ(t) = sigma·(1 − b·t),  b = 1 − floor.
+
+    ν_t = σ² (1 − (1 − b t)³) / (3 b)   (→ σ² t as b → 0).
+    """
+    b = 1.0 - floor
+    def fn(t: Tensor) -> Tensor:
+        if abs(b) < 1e-9:
+            return sigma ** 2 * t
+        return sigma ** 2 * (1.0 - (1.0 - b * t) ** 3) / (3.0 * b)
+    return fn
+
+
+# ---------------------------------------------------------------------------
+# Schedule dispatch
+# ---------------------------------------------------------------------------
+
+def make_noise_schedule(name: str = "constant", sigma: float = 1.0, floor: float = 0.0):
+    """Return (sigma_fn, nu_fn, nu_1) for the named noise schedule.
+
+    name = "constant":  σ(t) = sigma,                             ν_1 = sigma²
+    name = "linear":    σ(t) = sigma·(floor + (1−floor)(1−t)),    ν_1 = sigma²·(1 + a + a²)/3,  a = floor
+                        floor=0 ⇒ vanishing linear (σ(1)=0);  floor=1 ⇒ constant.
+    """
+    if name == "constant":
+        return sigma_constant(sigma), nu_constant(sigma), float(sigma ** 2)
+    if name == "linear":
+        a = float(floor)
+        nu_1 = float(sigma ** 2 * (1.0 + a + a ** 2) / 3.0)
+        return sigma_linear(sigma, a), nu_linear(sigma, a), nu_1
+    raise ValueError(f"unknown noise schedule: {name!r} (expected 'constant' or 'linear')")
 
 
 # ---------------------------------------------------------------------------

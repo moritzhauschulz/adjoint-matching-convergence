@@ -20,53 +20,63 @@ log-mixture bimodal reward, where $u^*$ is available via the Feynman-Kac / Doob 
 
 ---
 
-## 3. Reward and objective (full adjoint sampling)
+## 3. Reward and objective
 
-**Bimodal reward**:
+**Bimodal log-density** (reward):
 
 $$r(x) = \log\!\left(w_1\,e^{-\frac{\lambda_1}{2}(x-\mu_1)^2} + w_2\,e^{-\frac{\lambda_2}{2}(x-\mu_2)^2}\right)$$
 
-**Full objective** $g(x_1) = -\log p_1^\text{base}(x_1) - r(x_1)/\tau$. With $\tau=1$:
+**Full adjoint sampling objective** (arXiv:2504.11713, Algorithm 1):
 
-$$g(x_1) = \frac{x_1^2}{2\nu_1} - r(x_1) + \text{const}$$
+$$g(x_1) = \log p_1^\text{base}(x_1) - r(x_1) = -\frac{x_1^2}{2\nu_1} - r(x_1) + \text{const}$$
 
-$$\nabla g(x_1) = \frac{x_1}{\nu_1} - \nabla r(x_1)$$
+$$\nabla g(x_1) = -\frac{x_1}{\nu_1} - \nabla r(x_1)$$
 
-where the gradient of the reward is:
+where the score of the log-density is:
 
 $$\nabla r(x) = -\frac{\lambda_1(x-\mu_1)\,A_1(T,x) + \lambda_2(x-\mu_2)\,A_2(T,x)}{A_1(T,x)+A_2(T,x)}, \quad A_i(T,x) = w_i\,e^{-\lambda_i(x-\mu_i)^2/2}$$
+
+The self-consistency operator (fixed-point, from Feynman-Kac when $\exp(r)$ is integrable):
+
+$$T(u)(t,x) = -\sigma(t)\,\mathbb{E}_u\!\left[\nabla g(X_T^{u,x})\right]$$
+
+and $u^*$ is its fixed point: $T(u^*) = u^*$.
 
 **RAM loss** (Algorithm 1, inner loop): sample $X_{t|1}^\text{base} \sim p_{t|1}^\text{base}(\cdot|x_1)$, minimise
 
 $$L_\text{RAM}(\theta) = \mathbb{E}\!\left[\frac{\lambda(t)}{2}\,\|u_\theta(X_t, t) + \sigma(t)\,\nabla g(X_1)\|^2\right]$$
 
-with $\lambda(t) = 1/\sigma(t)^2$ (matching the paper).
+with $\lambda(t) = 1/\sigma(t)^2$. The target $-\sigma\nabla g(X_1)$ is stored as $\nabla g$ in the replay buffer.
 
 ---
 
 ## 4. Analytic optimal control (Feynman-Kac)
 
-$u^*(t,x) = \sigma(t)\,\nabla_x \log h(t,x)$ where $h(t,x) = \mathbb{E}_0[e^{-g(X_1)}\mid X_t=x]$.
+With $g = \log p_1^\text{base} - r$, the value function satisfies $h(t,x) = \mathbb{E}_\text{base}[e^{-g(X_1)}\mid X_t=x] = \mathbb{E}_\text{base}[e^{r(X_1)}/p_1^\text{base}(X_1)\mid X_t=x]$ and $u^*(t,x) = \sigma(t)\,\nabla_x \log h(t,x)$.
 
-With the full objective, the effective mixture parameters are:
+**Effective parameters** (requires $\lambda_i > 1/\nu_1$):
 
-$$\lambda_i^* = \lambda_i - \frac{1}{\nu_1}, \qquad \mu_i^* = \frac{\lambda_i \mu_i}{\lambda_i^*}$$
+$$\lambda_i^* = \lambda_i - \frac{1}{\nu_1}, \qquad \mu_i^* = \frac{\lambda_i\,\mu_i}{\lambda_i^*}, \qquad \kappa_i = \frac{d\,\lambda_i\,\mu_i^2}{2\,\nu_1\,\lambda_i^*}$$
 
-**Requirement**: $\lambda_i > 1/\nu_1$ (asserted at runtime).
+Completing the square in $-\lambda_i(x_1-\mu_i)^2/2 + x_1^2/(2\nu_1)$ produces the
+**mode-dependent constant $\kappa_i$**, which must be carried in $A_i$. It cancels
+in the $A_1/A_2$ ratio only for symmetric mixtures ($\mu_1^2=\mu_2^2$, equal
+$\lambda$); omitting it (an earlier bug) silently breaks $u^*$ for asymmetric
+means/precisions. Define:
 
-Define:
-
-$$A_i^*(t,x) = \frac{w_i}{\sqrt{1+\lambda_i^*\Sigma_t}}\exp\!\left(-\frac{\lambda_i^*(x-\mu_i^*)^2}{2(1+\lambda_i^*\Sigma_t)}\right)$$
+$$A_i(t,x) = \frac{w_i\,e^{\kappa_i}}{\sqrt{1+\lambda_i^*\Sigma_t}}\exp\!\left(-\frac{\lambda_i^*(x-\mu_i^*)^2}{2(1+\lambda_i^*\Sigma_t)}\right), \qquad \Sigma_t = \sigma_0^2(1-t)$$
 
 Then:
 
-$$u^*(t,x) = -\sigma(t)\,\frac{\displaystyle\sum_{i=1}^2 \frac{\lambda_i^*(x-\mu_i^*)}{1+\lambda_i^*\Sigma_t}\,A_i^*(t,x)}{A_1^*(t,x)+A_2^*(t,x)}$$
+$$u^*(t,x) = -\sigma(t)\,\frac{\displaystyle\sum_{i=1}^2 \frac{\lambda_i^*(x-\mu_i^*)}{1+\lambda_i^*\Sigma_t}\,A_i(t,x)}{A_1(t,x)+A_2(t,x)}$$
 
 ---
 
 ## 5. Terminal distribution under $u^*$
 
-$$p^{u^*}(x_1) \propto e^{r(x_1)} = \alpha_1\,\mathcal{N}(x_1;\,\mu_1,\,1/\lambda_1) + \alpha_2\,\mathcal{N}(x_1;\,\mu_2,\,1/\lambda_2)$$
+With the full objective, the base measure cancels exactly:
+
+$$p^{u^*}(x_1) \propto e^{-g(x_1)}\,p_1^{\text{base}}(x_1) = e^{r(x_1)} = \alpha_1\,\mathcal{N}(x_1;\,\mu_1,\,1/\lambda_1) + \alpha_2\,\mathcal{N}(x_1;\,\mu_2,\,1/\lambda_2)$$
 
 with $\alpha_i \propto w_i/\sqrt{\lambda_i}$. No $\sigma_0$ dependence.
 
@@ -86,9 +96,9 @@ $L_\infty$ uses a uniform x-grid centred at $(\mu_1+\mu_2)/2$ with half-width `l
 
 - `sigma_integral(t)` — $\Sigma_t = \sigma_0^2(1-t)$
 - `A_component(x, t, w, lam, mu_i, sigma_fn, d)` — $A_i^*(t,x)$ (called with starred params)
-- `optimal_control(x, t, w1, lambda1, mu1, w2, lambda2, mu2, sigma_fn, nu_1, d)` — starred params derived internally; asserts $\lambda_i > 1/\nu_1$
-- `grad_r(x1, w1, lambda1, mu1, w2, lambda2, mu2)` — $\nabla r(x_1)$
-- `grad_g_fn(x1)` inside `main` — returns $x_1/\nu_1 - \nabla r(x_1)$ (passed to `ram_loss`)
+- `optimal_control(x, t, w1, lambda1, mu1, w2, lambda2, mu2, sigma_fn, nu_1, d)` — effective params + $\kappa_i$ derived internally; asserts $\lambda_i > 1/\nu_1$. **2026-08-29:** added the $\kappa_i = d\lambda_i\mu_i^2/(2\nu_1\lambda_i^*)$ term to `log_A1`/`log_A2` (was missing — only affected asymmetric mixtures; the default $\pm 3$ config is unchanged).
+- `grad_r(x1, w1, lambda1, mu1, w2, lambda2, mu2)` — $\nabla r(x_1)$ (internal helper)
+- `grad_g_fn(x1)` inside `main` — returns $\nabla g = -x_1/\nu_1 - \nabla r(x_1)$ (stored in replay buffer)
 - `terminal_mixture_params(w1, lambda1, mu1, w2, lambda2, mu2)` — returns $(\alpha_1, \mu_1, 1/\lambda_1, \alpha_2, \mu_2, 1/\lambda_2)$; no $\sigma_0$ parameter
 - `target_params` dict written to `metrics.json`: `{w1, lambda1, mu1, w2, lambda2, mu2}` (no `sigma`)
 

@@ -11,12 +11,15 @@ target:
   lambda2: 1.0  # precision of mode 2
   mu2: 3.0      # centre of mode 2
 
-sigma: 2.0       # constant noise schedule σ(t) = sigma
+sigma_schedule: constant   # "constant": σ(t)=sigma ;  "linear": σ(t)=sigma·(floor + (1−floor)(1−t))
+sigma: 2.0                  # σ scale at t=0
+sigma_floor: 0.0            # linear only: σ(1)/σ(0). 0 ⇒ σ(1)=0; 1 ⇒ constant. ν₁ = sigma²(1+a+a²)/3, need λᵢ > 1/ν₁
 
 sampler:
   steps: 100     # Euler-Maruyama steps N
 
 algorithm:
+  objective: ram         # "ram" (reciprocal AM, base-bridge) or "am" (reference L_AM along controlled trajectories; no λ(t) weight)
   n_outer: 256
   n_inner: 256
   n_inner_steps: 500
@@ -30,7 +33,7 @@ network:
   t_emb_dim: 32
 
 training:
-  outer_iterations: 200
+  outer_iterations: 50
   lr: 3e-4
   lr_min: 0.0
   inner_warmup_frac: 0.1
@@ -44,11 +47,22 @@ eval:
   n_linf_grid: 500
   n_sample_paths: 1000
   inner_curve_every: 10
-  # Same-BM LHS evaluation
-  same_bm_eval: true        # enable/disable the same-BM metric
-  n_same_bm_samples: 64    # Monte Carlo BM draws per starting point
-  n_same_bm_grid: 60        # x grid points for same-BM eval
-  same_bm_every: 10         # compute every N outer iterations
+  # Operator T evaluation — also hosts the §"Sanity Check" metrics
+  # (‖P(u_θ) − u*‖ with analytic u*, its tiled/ratio forms, and a both-rollout compare)
+  op_eval: true             # enable/disable operator T computation
+  n_op_mc_samples: 64       # MC draws for estimating P(u)(t,x)
+  n_op_grid: 60             # x-grid points for the operator / sanity-check grid
+  op_every: 1               # compute every N outer iterations
+  sanity_ratio_only: false  # minimal output: only same_bm/sbm_ratio.png (the 2 §Sanity-Check ratios); skip all else
+  tiled_sup_percentile: 100.0  # robust "sup" for every tiled/sup-norm: p-th percentile over x AND over the [t,T] suffix (100 = exact max)
+  both_rollout_compare: true      # also MC-estimate the both-rollout shared-BM LHS
+  n_both_rollout_samples: 64      # shared-BM draws for that comparison (default: n_op_mc_samples)
+  # Path-based u^{n+1} vs T(u_n) metric (§3.1): evaluated along sampled trajectories
+  n_path_op_samples: 64    # paths under u^{n+1} for the path-based residual
+  # Fixed-point sanity check: ‖P(u*)(t,x) − u*(t,x)‖ ≪ 1  (analytic u* self-consistency)
+  fixed_point_check: true
+  n_fixed_point_mc: 512    # MC rollouts per (t, x) node
+  n_fixed_point_grid: 121  # x-grid resolution for the residual heatmap
 
 logging:
   wandb: true

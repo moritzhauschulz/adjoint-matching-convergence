@@ -50,6 +50,9 @@ multirun/
 # Claude memory
 memory/
 
+# Project notes version history
+project_notes_versions/
+
 # Stray generated artifacts at repo root
 /*.png
 /*.json

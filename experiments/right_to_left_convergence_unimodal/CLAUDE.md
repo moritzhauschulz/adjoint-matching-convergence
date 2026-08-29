@@ -20,56 +20,56 @@ The experiment verifies this prediction in a setting where $u^*$ is available in
 ## 2. Setting
 
 - Base drift: $b = 0$
-- Noise schedule: constant $\sigma(t) = \sigma_0$
+- Noise schedule: constant $\sigma(t) = \sigma_0$, $\nu_1 = \int_0^1 \sigma(t)^2\,dt = \sigma_0^2$
 - Time horizon: $T = 1$, $t \in [0, 1]$
 - State dimension: $d$ (experiment uses $d = 1$ initially for clarity)
 - Operator (from Section 2 of notes, lean adjoint with $b=0$):
 
-$$T(u)(t, x) = -\sigma(t)\,\mathbb{E}\!\left[\nabla r(X_T^u) \;\middle|\; X_t = x\right]$$
+$$T(u)(t, x) = -\sigma(t)\,\mathbb{E}\!\left[\nabla g(X_T^u) \;\middle|\; X_t = x\right]$$
 
 ---
 
 ## 3. Reward and training objective
 
-$$r(x) = \frac{\lambda}{2}\|x\|^2, \qquad \nabla r(x) = \lambda x$$
+The log-density of a Gaussian at $\mu$ with precision $\lambda$ is
 
-The training objective (simplified SOC, **no** $\log p_1^\text{base}$ term) is:
+$$r(x) = -\frac{\lambda}{2}\|x\|^2, \qquad \nabla r(x) = -\lambda x$$
 
-$$\min_{u}\;\mathbb{E}\!\left[\int_0^1 \tfrac{1}{2}\|u(t, X_t)\|^2\,dt - r(X_1 - \mu)\right]$$
+so $r(x-\mu) = -\frac{\lambda}{2}\|x-\mu\|^2$ (maximised at $x=\mu$).
 
-where $\mu \in \mathbb{R}$ is a scalar shift (broadcast to all $d$ dimensions). The effective terminal cost is therefore
+The **full adjoint sampling objective** (arXiv:2504.11713, Algorithm 1) is:
 
-$$g_\text{eff}(X_1) = -r(X_1 - \mu) = -\frac{\lambda}{2}\|X_1 - \mu\|^2$$
+$$\min_{u}\;\mathbb{E}\!\left[\int_0^1 \tfrac{1}{2}\|u(t, X_t)\|^2\,dt + g(X_1)\right]$$
 
-and its gradient (used in the RAM loss replay buffer) is:
+where
 
-$$\nabla g_\text{eff}(X_1) = -\lambda(X_1 - \mu)$$
+$$g(x_1) = \log p_1^\text{base}(x_1) - r(x_1 - \mu) = -\frac{x_1^2}{2\nu_1} - r(x_1 - \mu) + \text{const}$$
 
-> **Sign convention**: the RAM loss is written with `grad_g = λ(X₁ − μ)` (positive),
-> because the adjoint sampling framework absorbs the minus sign into the loss
-> (consistent with the $\mu=0$ case where `grad_g = λ X₁`).
+The terminal cost gradient (stored as `grad_g` in the RAM loss replay buffer) is:
 
-> **Important**: this differs from the full adjoint sampling objective with the
-> $\log p_1^\text{base}$ term, which is **omitted** by design.
+$$\nabla g(x_1) = -\frac{x_1}{\nu_1} + \lambda(x_1 - \mu) = \lambda^*(x_1 - \mu^*)$$
+
+where the equality follows from completing the square with effective parameters
+
+$$\lambda^* = \lambda - \frac{1}{\nu_1}, \qquad \mu^* = \frac{\lambda\,\mu}{\lambda^*}$$
+
+**Condition**: $\lambda > 1/\nu_1$ is required (enforced by an assertion in code).
+
+Under the full AS objective, the terminal distribution is exactly $p^{u^*}(x_1) \propto e^{r(x_1 - \mu)} = \mathcal{N}(x_1;\,\mu,\,1/\lambda)$, with no $\sigma_0$ dependence.
 
 ---
 
 ## 4. Analytic optimal control (Lemma, Section 4.1 of notes)
 
-Define the Riccati coefficient (solved via HJB with ansatz $V(t,x) = \frac{1}{2}a(t)(x-\mu)^2 + c(t)$):
+Define the Riccati coefficient (solved via HJB with terminal condition $g(x) = \lambda^*/2\,(x-\mu^*)^2 + \text{const}$):
 
-$$a(t) = \frac{\lambda}{1 + \lambda \displaystyle\int_t^1 \sigma(s)^2\,ds}$$
+$$a(t) = \frac{\lambda^*}{1 + \lambda^*\,\Sigma_t}, \qquad \Sigma_t = \int_t^1 \sigma(s)^2\,ds = \sigma_0^2(1-t)$$
 
-For constant schedule $\sigma(t) = \sigma_0$:
+The optimal control is **linear in $(x - \mu^*)$**:
 
-$$a(t) = \frac{\lambda}{1 + \lambda\,\sigma_0^2\,(1 - t)}$$
+$$u^*(t, x) = -\sigma(t)\,a(t)\,(x - \mu^*)$$
 
-The optimal control is **linear in $(x - \mu)$** (no bias term beyond the shift):
-
-$$u^*(t, x) = -\sigma(t)\,a(t)\,(x - \mu)$$
-
-Note: $a(t)$ depends only on $\sigma$ and $\lambda$, not on $\mu$. The Riccati coefficient is
-therefore identical to the $\mu=0$ case.
+Note: the Riccati coefficient $a(t)$ uses $\lambda^*$ and the shift is $\mu^*$, not the original $(\lambda, \mu)$.
 
 ---
 
@@ -77,27 +77,26 @@ therefore identical to the $\mu=0$ case.
 
 Under $u^*$, the SDE is
 
-$$dX_t = -\sigma^2(t)\,a(t)\,(X_t - \mu)\,dt + \sigma(t)\,dB_t, \qquad X_0 = 0$$
+$$dX_t = -\sigma^2(t)\,a(t)\,(X_t - \mu^*)\,dt + \sigma(t)\,dB_t, \qquad X_0 = 0$$
 
 This is a linear Gaussian SDE. Decompose $X_t = m_t + Y_t$ where $m_t = \mathbb{E}[X_t]$ and
 $Y_t = X_t - m_t$ is the zero-mean fluctuation. The mean and variance satisfy:
 
-**Mean ODE** ($m_0 = 0$):
+**Mean ODE** ($m_0 = 0$, attractor $\mu^*$):
 
-$$\frac{dm_t}{dt} = -\sigma^2(t)\,a(t)\,(m_t - \mu)$$
+$$\frac{dm_t}{dt} = -\sigma^2(t)\,a(t)\,(m_t - \mu^*)$$
 
-**Variance ODE** ($V_0 = 0$, identical to the $\mu = 0$ case):
+**Variance ODE** ($V_0 = 0$):
 
 $$\frac{dV_t}{dt} = -2\sigma^2(t)\,a(t)\,V_t + \sigma^2(t)$$
 
 Both are integrated numerically via forward Euler on the evaluation grid.
 
-The marginal is $X_t \sim \mathcal{N}(m_t\,\mathbf{1}_d,\; V_t\,I_d)$.
+As $t \to 1$: by algebraic identity $\lambda\nu_1/(1+\lambda^*\nu_1) = 1$, the mean satisfies $m_1 = \mu$;
+and $V_1 = 1/\lambda$. So the marginal is $X_1 \sim \mathcal{N}(\mu,\,1/\lambda)$ as expected.
 
-As $t \to 1$, $m_t \to \mu$ and $V_t \to V_1 < \infty$: the process concentrates near $\mu$.
-
-> **Grid note**: the sup-norm x-grid is `linspace(μ - x_range, μ + x_range)`, always centred at $\mu$.
-> `linf_x_range` controls the half-width around $\mu$.
+> **Grid note**: the sup-norm x-grid is `linspace(μ - x_range, μ + x_range)`, centred at $\mu$
+> (the target mean). `linf_x_range` controls the half-width.
 
 ---
 
@@ -155,13 +154,14 @@ direct empirical counterpart to the theoretical norm $\|u-v\|_{[t,T]}$.
 
 ## 7. Implementation notes
 
-- `riccati_coefficient(t, lambda_, sigma_fn)` — $a(t) = \lambda/(1+\lambda\sigma_0^2(1-t))$
-- `riccati_mean_and_variance(ts, lambda_, mu, sigma_fn)` — forward Euler on both ODEs; returns `(Vs, Ms)` each of shape `[K+1]`
-- `optimal_control(x, t, lambda_, mu, sigma_fn)` — $u^*(t,x) = -\sigma(t)a(t)(x-\mu)$
-- `rel_l2(u_theta, t_val, Vt_val, Mt_val, lambda_, mu, sigma_fn, d, n_samples, device)` — samples $X_t \sim \mathcal{N}(m_t, V_t I)$
-- `abs_l2(...)` — same signature as `rel_l2`, unnormalised numerator
-- `abs_linf(u_theta, t_val, lambda_, mu, sigma_fn, d, xs)` — evaluates on fixed x-grid
-- `ContrFact(t; n)` — computed as `abs_linf[n+1] / abs_linf[n]` across time slices
-- `grad_g_fn(x1)` — returns `lambda_ * (x1 - mu)` for the RAM replay buffer
+- `riccati_coefficient(t, lambda_, sigma_fn)` — $a(t) = \lambda^*/(1+\lambda^*\Sigma_t)$, called with `lambda_star`
+- `riccati_mean_and_variance(ts, lambda_, mu, sigma_fn)` — forward Euler on both ODEs; called with `(lambda_star, mu_star)`; returns `(Ms, Vs)` each of shape `[K+1]`
+- `optimal_control(x, t, lambda_, mu, sigma_fn)` — $u^*(t,x) = -\sigma(t)a(t)(x-\mu^*)$, called with `(lambda_star, mu_star)`
+- `rel_l2(...)`, `abs_l2(...)`, `abs_linf(...)` — called with `(lambda_star, mu_star)`
+- `control_field(...)` — called with `(lambda_star, mu_star)`
+- `grad_g_fn(x1)` — returns `lambda_star * (x1 - mu_star)` = $\lambda^*(x_1 - \mu^*)$
+- Effective params computed in `main()`: `lambda_star = lambda_ - 1/nu_1`, `mu_star = lambda_ * mu / lambda_star`
+- Assertion `lambda_star > 0` enforces the condition $\lambda > 1/\nu_1$
 
-Config parameters under `target`: `d`, `lambda_`, `mu`.
+Config parameters under `target`: `d`, `lambda_`, `mu`. Config must satisfy `lambda_ > 1/sigma**2`.
+With `sigma=1.0`, need `lambda_ > 1.0` (e.g. `lambda_: 2.0` gives `lambda_star = 1.0`, `mu_star = 5.0`).

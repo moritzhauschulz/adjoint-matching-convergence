@@ -3,12 +3,14 @@
 Verifies the theoretical contraction bound: the learned control u_θ should
 converge to u* from right to left (i.e., error decreases as t → 1).
 
-Setting: quadratic reward r(x) = λ/2‖x‖², simplified objective (no log p₁^base),
-with analytic optimal control available via Riccati ODE (Section 4.1 of notes).
+Setting: quadratic reward r(x) = λ/2‖x‖², full adjoint sampling objective
+(with base-measure correction g = log p₁^base − r), with analytic optimal
+control available via Riccati ODE with effective parameters λ* = λ − 1/ν₁,
+μ* = λμ/λ* (Section 4.1 of notes).  Requires λ > 1/ν₁ = 1/σ₀².
 
 Run:
-    python experiments/right_to_left_convergence/run.py experiment=right_to_left_convergence
-    python experiments/right_to_left_convergence/run.py experiment=right_to_left_convergence target.lambda_=2.0
+    python experiments/right_to_left_convergence_unimodal/run.py experiment=right_to_left_convergence_unimodal
+    python experiments/right_to_left_convergence_unimodal/run.py experiment=right_to_left_convergence_unimodal target.lambda_=3.0
 """
 
 import math
@@ -250,6 +252,15 @@ def main(cfg: DictConfig) -> None:
     nu_fn = utils.nu_constant(cfg.sigma)
     nu_1 = float(cfg.sigma ** 2)
 
+    # Effective parameters from base-measure correction (full AS objective).
+    # g(x) = log p₁^base(x) − r(x−μ) completes the square to give
+    # λ* = λ − 1/ν₁,  μ* = λμ/λ*,  with λ > 1/ν₁ required.
+    lambda_star = lambda_ - 1.0 / nu_1
+    mu_star = lambda_ * mu / lambda_star
+    assert lambda_star > 0, (
+        f"Full AS condition λ > 1/ν₁ violated: λ={lambda_}, 1/ν₁={1/nu_1:.4f}"
+    )
+
     net = DriftMLP(
         d=d,
         hidden_dim=cfg.network.hidden_dim,
@@ -264,7 +275,7 @@ def main(cfg: DictConfig) -> None:
     # Precompute Riccati mean and variance on evaluation grid
     K = cfg.eval.n_time_slices
     ts_eval = torch.linspace(0.0, 1.0, K + 1, device=device)
-    Ms_eval, Vs_eval = riccati_mean_and_variance(ts_eval, lambda_, mu, sigma_fn)
+    Ms_eval, Vs_eval = riccati_mean_and_variance(ts_eval, lambda_star, mu_star, sigma_fn)
     m1: float = Ms_eval[-1].item()   # mean of X_1 under u*
     v1: float = Vs_eval[-1].item()   # variance of X_1 under u*
 
@@ -279,7 +290,7 @@ def main(cfg: DictConfig) -> None:
         u_star_field: list[list[float]] = []
         for k in range(K + 1):
             t_row = ts_eval[k].expand(cfg.eval.n_linf_grid)   # [n_grid]
-            u_star_k = optimal_control(x_col, t_row, lambda_, mu, sigma_fn)  # [n_grid, d]
+            u_star_k = optimal_control(x_col, t_row, lambda_star, mu_star, sigma_fn)  # [n_grid, d]
             # For d=1 store scalar; for d>1 store norm
             if d == 1:
                 u_star_field.append(u_star_k[:, 0].tolist())
@@ -291,7 +302,8 @@ def main(cfg: DictConfig) -> None:
         wandb.init(project=cfg.logging.project, entity=cfg.logging.entity, config=dict(cfg))
 
     def grad_g_fn(x1: Tensor) -> Tensor:
-        return lambda_ * (x1 - mu)
+        # ∇g(x₁) = −x₁/ν₁ + λ(x₁−μ) = λ*(x₁−μ*) after completing the square
+        return lambda_star * (x1 - mu_star)
 
     snapshots: list[dict] = []
     ts_list = ts_eval.tolist()
@@ -300,7 +312,7 @@ def main(cfg: DictConfig) -> None:
 
     for outer_it in range(cfg.training.outer_iterations):
 
-        # Outer: sample X_1 under stopgrad(u_θ), compute ∇g_eff = λ X_1
+        # Outer: sample X_1 under stopgrad(u_θ), compute ∇g(X₁) = λ*(X₁ − μ*)
         x1 = sampler.sample(net, cfg.algorithm.n_outer, d, device)
         gg = grad_g_fn(x1)
         buffer.add(x1, gg)
@@ -327,11 +339,11 @@ def main(cfg: DictConfig) -> None:
                 t_val = ts_eval[k].item()
                 Vt_val = Vs_eval[k].item()
                 Mt_val = Ms_eval[k].item()
-                rl2 = rel_l2(net, t_val, Vt_val, Mt_val, lambda_, mu, sigma_fn, d,
+                rl2 = rel_l2(net, t_val, Vt_val, Mt_val, lambda_star, mu_star, sigma_fn, d,
                              cfg.eval.n_metric_samples, device)
-                al2 = abs_l2(net, t_val, Vt_val, Mt_val, lambda_, mu, sigma_fn, d,
+                al2 = abs_l2(net, t_val, Vt_val, Mt_val, lambda_star, mu_star, sigma_fn, d,
                              cfg.eval.n_metric_samples, device)
-                al_inf, field = abs_linf(net, t_val, lambda_, mu, sigma_fn, d, xs_linf)
+                al_inf, field = abs_linf(net, t_val, lambda_star, mu_star, sigma_fn, d, xs_linf)
                 rl2_vals.append(rl2)
                 al2_vals.append(al2)
                 al_inf_vals.append(al_inf)
@@ -382,7 +394,7 @@ def main(cfg: DictConfig) -> None:
 
             # Control field and sample paths for this checkpoint
             snap_u_theta_field: list[list[float]] = [
-                control_field(net, ts_eval[k].item(), lambda_, mu, sigma_fn, d, xs_linf)
+                control_field(net, ts_eval[k].item(), lambda_star, mu_star, sigma_fn, d, xs_linf)
                 for k in range(K + 1)
             ]
             n_sp = cfg.eval.n_sample_paths
@@ -426,12 +438,12 @@ def main(cfg: DictConfig) -> None:
         u_theta_field: list[list[float]] = []
         for k in range(K + 1):
             t_val_k = ts_eval[k].item()
-            u_theta_field.append(control_field(net, t_val_k, lambda_, mu, sigma_fn, d, xs_linf))
+            u_theta_field.append(control_field(net, t_val_k, lambda_star, mu_star, sigma_fn, d, xs_linf))
 
     # Generate sample trajectories under u* and u_theta
     n_sp = cfg.eval.n_sample_paths
     if n_sp > 0:
-        u_star_fn = lambda x, t: optimal_control(x, t, lambda_, mu, sigma_fn)
+        u_star_fn = lambda x, t: optimal_control(x, t, lambda_star, mu_star, sigma_fn)
         paths_star = euler_maruyama_paths(u_star_fn, n_sp, ts_eval, d, sigma_fn, device)
         paths_theta = euler_maruyama_paths(net, n_sp, ts_eval, d, sigma_fn, device)
     else:
