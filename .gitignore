@@ -50,7 +50,8 @@ multirun/
 # Claude memory
 memory/
 
-# Project notes version history
+# Project notes — human-written theory, must NOT be committed / pushed
+Project_Notes.tm
 project_notes_versions/
 
 # Stray generated artifacts at repo root
