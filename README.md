@@ -1,9 +1,8 @@
 # Adjoint Matching — Convergence Experiments
 
 Empirical study of the convergence of the adjoint matching / adjoint sampling
-algorithm (arXiv:2504.11713) and its variants. The theoretical claims under test
-live in the hand-written `Project_Notes.tm`; each experiment verifies or refutes
-one of them.
+algorithm (arXiv:2504.11713) and its variants. Each experiment verifies or
+refutes a theoretical prediction about the algorithm's behaviour.
 
 ## Setup
 
@@ -23,7 +22,7 @@ tests/                  pytest
 results/                gitignored — Hydra writes runs here
 ```
 
-Each experiment has its own `CLAUDE.md` with the full mathematical spec;
+Each experiment has its own `CLAUDE.md` with the mathematical spec it implements;
 `src/adjoint_sampling/CLAUDE.md` covers the shared package.
 
 ## Running an experiment
@@ -38,11 +37,11 @@ python experiments/right_to_left_convergence_bimodal_same_bm/run.py \
 Outputs (metrics + plots) land in `results/run/<hydra.run.dir>/`. Tests: `pytest`.
 
 The primary experiment is **`right_to_left_convergence_bimodal_same_bm`** — the
-§"Sanity Check" of `Project_Notes.tm` (fixed-point residual `‖P(u*)−u*‖`,
-operator error `‖P(u_θ)−u*‖`, and its right-to-left ratios). It trains with
+self-consistency "sanity check": fixed-point residual `‖P(u*)−u*‖`, operator
+error `‖P(u_θ)−u*‖`, and its right-to-left ratios. It trains with
 `algorithm.objective` ∈ {`ram` (default), `am`} and `network.time_embedding` ∈
-{`raw` (default here — feed the scalar t), `sinusoidal`}. `Project_Notes.tm`
-links 9 figures; `plotting.py` produces exactly those.
+{`raw` (default here — feed the scalar t), `sinusoidal`}, and produces 9 figures
+(see the docstring in `plotting.py`).
 
 ## Reproducing the headline runs (AM objective, raw-t, constant σ = 2, keeper eval)
 
